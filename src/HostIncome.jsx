@@ -817,7 +817,8 @@ function JadualMingguan({ ctx }) {
   const maxSlots = settings.maxSlots || 4;
   const [mode, setMode] = useState("week"); // week | 2week | month
   const [cursor, setCursor] = useState(() => new Date(TODAY));
-  const [modal, setModal] = useState(null);
+  const [modal, setModal] = useState(null);    // add/edit slot
+  const [dayView, setDayView] = useState(null); // popup senarai slot 1 hari
 
   const compact = mode !== "week";
   const monthIdx = cursor.getMonth();
@@ -828,7 +829,8 @@ function JadualMingguan({ ctx }) {
   const days = Array.from({ length: count }, (_, i) => {
     const d = addDays(gridStart, i), ds = iso(d);
     const list = sessions.filter((s) => s.date === ds).sort((a, b) => a.start.localeCompare(b.start));
-    return { date: ds, d, dow: d.getDay(), today: ds === data.todayStr, past: ds < data.todayStr, inMonth: d.getMonth() === monthIdx, sessions: list, hours: list.filter(isDone).reduce((a, x) => a + x.hours, 0), income: list.filter(isDone).reduce((a, x) => a + x.income, 0) };
+    const done = list.filter(isDone), planned = list.filter((s) => !isDone(s));
+    return { date: ds, d, dow: d.getDay(), today: ds === data.todayStr, inMonth: d.getMonth() === monthIdx, sessions: list, doneCount: done.length, plannedCount: planned.length, hours: done.reduce((a, x) => a + x.hours, 0), income: done.reduce((a, x) => a + x.income, 0) };
   });
   const first = days[0].d, last = days[days.length - 1].d;
   const label = mode === "month" ? `${MONTHS_FULL[monthIdx]} ${cursor.getFullYear()}` : `${fmtDateShort(iso(first))} – ${fmtDateShort(iso(last))} ${last.getFullYear()}`;
@@ -837,13 +839,15 @@ function JadualMingguan({ ctx }) {
     if (mode === "month") setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1));
     else setCursor(addDays(cursor, dir * (mode === "2week" ? 14 : 7)));
   }
-  function openEdit(s) { if (data.lockedSessionIds.has(s.id)) { flash("Slot dikunci — sudah dibil/invois."); return; } setModal({ date: s.date, session: s }); }
-  function openAdd(day) {
+  function openEdit(s) { if (data.lockedSessionIds.has(s.id)) { flash("Slot dikunci — sudah dibil/invois."); return; } setDayView(null); setModal({ date: s.date, session: s }); }
+  function openAdd(date) {
     if (brands.length === 0) { flash("Daftar brand dahulu di halaman Brand."); return; }
-    if (day.sessions.length >= maxSlots) { flash(`Maksimum ${maxSlots} slot sehari.`); return; }
-    const lastS = [...day.sessions].sort((a, b) => a.start.localeCompare(b.start)).pop();
+    const list = sessions.filter((s) => s.date === date);
+    if (list.length >= maxSlots) { flash(`Maksimum ${maxSlots} slot sehari.`); return; }
+    const lastS = [...list].sort((a, b) => a.start.localeCompare(b.start)).pop();
     const startH = lastS ? parseInt(lastS.end) : 10;
-    setModal({ date: day.date, session: null, start: `${pad(Math.min(22, startH))}:00`, end: `${pad(Math.min(23, startH + 2))}:00` });
+    setDayView(null);
+    setModal({ date, session: null, start: `${pad(Math.min(22, startH))}:00`, end: `${pad(Math.min(23, startH + 2))}:00` });
   }
 
   const Seg = ({ id, t }) => (
@@ -852,7 +856,7 @@ function JadualMingguan({ ctx }) {
 
   return (
     <>
-      <PageHead title="Jadual Host" subtitle="Klik slot untuk isi laporan · klik hari untuk tambah"
+      <PageHead title="Jadual Host" subtitle="Klik hari untuk lihat / tambah slot"
         right={
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex items-center gap-1 rounded-xl border bg-white p-1" style={{ borderColor: "#EEF0F4" }}><Seg id="week" t="Minggu" /><Seg id="2week" t="2 Minggu" /><Seg id="month" t="Bulan" /></div>
@@ -864,51 +868,105 @@ function JadualMingguan({ ctx }) {
         } />
 
       {compact && (
-        <div className="mb-1.5 hidden grid-cols-7 gap-1.5 sm:grid">
+        <div className="mb-1.5 grid grid-cols-7 gap-1.5">
           {["Isn", "Sel", "Rab", "Kha", "Jum", "Sab", "Ahd"].map((d) => <div key={d} className="px-1 text-center text-[11px] font-bold" style={{ color: SUB }}>{d}</div>)}
         </div>
       )}
 
-      <div className={compact ? "grid grid-cols-7 gap-1.5" : "grid grid-cols-2 gap-2.5 sm:grid-cols-4 xl:grid-cols-7"}>
-        {days.map((day) => {
-          const atMax = day.sessions.length >= maxSlots;
-          const faded = mode === "month" && !day.inMonth;
-          const shown = compact ? day.sessions.slice(0, 2) : day.sessions;
-          const extra = day.sessions.length - shown.length;
-          return (
-            <div key={day.date} onClick={compact ? () => openAdd(day) : undefined}
-              className={`flex flex-col rounded-xl border bg-white p-2 ${compact ? "cursor-pointer" : ""}`}
-              style={{ borderColor: day.today ? "#C4B5FD" : "#EEF0F4", boxShadow: day.today ? "0 4px 12px rgba(109,40,217,0.12)" : "none", minHeight: compact ? (mode === "month" ? 92 : 122) : 150, opacity: faded ? 0.45 : 1 }}>
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-bold" style={{ color: day.today ? PURPLE : INK }}>{!compact && DAYS_SHORT[day.dow] + " "}<span className={compact ? "" : "font-normal"} style={{ color: compact ? (day.today ? PURPLE : INK) : SUB }}>{day.d.getDate()}</span></p>
-                {day.today && <span className="rounded-full px-1.5 text-[9px] font-bold text-white" style={{ background: PURPLE }}>Hari Ini</span>}
-              </div>
-              <div className="mt-1.5 flex flex-1 flex-col gap-1">
-                {shown.map((s) => {
-                  const locked = data.lockedSessionIds.has(s.id); const col = data.bById[s.brandId]?.color || PURPLE;
-                  return (
-                    <button key={s.id} onClick={(e) => { e.stopPropagation(); openEdit(s); }} className="rounded-lg border p-1 text-left" style={{ borderColor: "#F1F0F6", background: isDone(s) ? "#FCFBFE" : "#FFFDF5" }}>
-                      <div className="flex items-center gap-1"><Dot color={col} size={6} /><span className="truncate text-[10px] font-semibold leading-tight">{compact ? fmtTimeShort(s.start) : s.brand}</span>{locked && <Lock size={8} style={{ color: SUB }} />}</div>
-                      {!compact && <div className="mt-0.5 flex items-center justify-between text-[10px]" style={{ color: SUB }}><span>{fmtTimeShort(s.start)}-{fmtTimeShort(s.end)}</span><span className="font-bold" style={{ color: isDone(s) ? PURPLE : "#B45309" }}>{isDone(s) ? RM(s.income).replace(".00", "") : "•"}</span></div>}
-                      {compact && <div className="text-[9px] font-bold" style={{ color: isDone(s) ? PURPLE : "#B45309" }}>{isDone(s) ? RM(s.income).replace(".00", "") : "•"}</div>}
-                    </button>
-                  );
-                })}
-                {compact && extra > 0 && <span className="text-[10px] font-semibold" style={{ color: PURPLE }}>+{extra} lagi</span>}
-                {!compact && !atMax && (
-                  <button onClick={() => openAdd(day)} className="flex items-center justify-center gap-1 rounded-lg border border-dashed py-1.5 text-[11px] font-semibold" style={{ borderColor: "#E4E0F5", color: PURPLE }}><Plus size={12} /> Slot</button>
+      {compact ? (
+        /* ===== MOD RINGKAS (2 minggu / bulan): ringkasan sahaja, tekan untuk popup ===== */
+        <div className="grid grid-cols-7 gap-1.5">
+          {days.map((day) => {
+            const faded = mode === "month" && !day.inMonth;
+            const empty = day.sessions.length === 0;
+            return (
+              <button key={day.date} onClick={() => (empty ? openAdd(day.date) : setDayView(day.date))}
+                className="flex flex-col rounded-xl border bg-white p-2 text-left transition-all hover:shadow-md"
+                style={{ borderColor: day.today ? "#C4B5FD" : "#EEF0F4", boxShadow: day.today ? "0 4px 12px rgba(109,40,217,0.12)" : "none", minHeight: mode === "month" ? 88 : 104, opacity: faded ? 0.5 : 1 }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold" style={{ color: day.today ? PURPLE : INK }}>{day.d.getDate()}</span>
+                  {day.today && <span className="rounded-full px-1.5 text-[9px] font-bold text-white" style={{ background: PURPLE }}>Kini</span>}
+                </div>
+                {empty ? (
+                  <div className="flex flex-1 items-center justify-center"><Plus size={16} style={{ color: "#CBD5E1" }} /></div>
+                ) : (
+                  <div className="mt-auto flex flex-col gap-1">
+                    <span className="text-sm font-extrabold leading-none" style={{ color: PURPLE }}>{RM(day.income).replace(".00", "")}</span>
+                    <span className="text-[10px] font-semibold" style={{ color: SUB }}>{day.sessions.length} slot</span>
+                    <div className="flex flex-wrap gap-1">
+                      {day.doneCount > 0 && <span className="rounded px-1 text-[9px] font-bold" style={{ background: "#DCFCE7", color: "#15803D" }}>{day.doneCount} ✓</span>}
+                      {day.plannedCount > 0 && <span className="rounded px-1 text-[9px] font-bold" style={{ background: "#FEF3C7", color: "#B45309" }}>{day.plannedCount} •</span>}
+                    </div>
+                  </div>
                 )}
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        /* ===== MOD MINGGU: penuh ===== */
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4 xl:grid-cols-7">
+          {days.map((day) => {
+            const atMax = day.sessions.length >= maxSlots;
+            return (
+              <div key={day.date} className="flex flex-col rounded-xl border bg-white p-2.5" style={{ borderColor: day.today ? "#C4B5FD" : "#EEF0F4", boxShadow: day.today ? "0 6px 16px rgba(109,40,217,0.12)" : "none", minHeight: 150 }}>
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-bold" style={{ color: day.today ? PURPLE : INK }}>{DAYS_SHORT[day.dow]} <span className="font-normal" style={{ color: SUB }}>{day.d.getDate()}</span></p>
+                  {day.today && <span className="h-1.5 w-1.5 rounded-full" style={{ background: PURPLE }} />}
+                </div>
+                <div className="mt-2 flex flex-1 flex-col gap-1.5">
+                  {day.sessions.map((s) => {
+                    const locked = data.lockedSessionIds.has(s.id); const col = data.bById[s.brandId]?.color || PURPLE;
+                    return (
+                      <button key={s.id} onClick={() => openEdit(s)} className="rounded-lg border p-1.5 text-left transition-all" style={{ borderColor: "#F1F0F6", background: isDone(s) ? "#FCFBFE" : "#FFFDF5" }}>
+                        <div className="flex items-center gap-1"><Dot color={col} size={7} /><span className="truncate text-[11px] font-semibold leading-tight">{s.brand}</span>{locked && <Lock size={9} style={{ color: SUB }} />}</div>
+                        <div className="mt-0.5 flex items-center justify-between text-[10px]" style={{ color: SUB }}><span>{fmtTimeShort(s.start)}-{fmtTimeShort(s.end)}</span><span className="font-bold" style={{ color: isDone(s) ? PURPLE : "#B45309" }}>{isDone(s) ? RM(s.income).replace(".00", "") : "•"}</span></div>
+                      </button>
+                    );
+                  })}
+                  {!atMax && (
+                    <button onClick={() => openAdd(day.date)} className="flex items-center justify-center gap-1 rounded-lg border border-dashed py-1.5 text-[11px] font-semibold" style={{ borderColor: "#E4E0F5", color: PURPLE }}><Plus size={12} /> Slot</button>
+                  )}
+                </div>
+                <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[10px]" style={{ borderColor: "#F1F0F6" }}><span style={{ color: SUB }}>{day.hours}j</span><span className="font-bold">{RM(day.income).replace(".00", "")}</span></div>
               </div>
-              {!compact && <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[10px]" style={{ borderColor: "#F1F0F6" }}><span style={{ color: SUB }}>{day.hours}j</span><span className="font-bold">{RM(day.income).replace(".00", "")}</span></div>}
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white p-5" style={{ borderColor: "#EEF0F4" }}>
         <div className="flex items-center gap-3"><span className="flex h-11 w-11 items-center justify-center rounded-xl" style={{ background: LAV }}><ReceiptText size={20} style={{ color: PURPLE }} /></span><div><p className="text-sm font-bold">Dah siap buat live?</p><p className="text-xs" style={{ color: SUB }}>Buat claim ikut brand & julat tarikh untuk jana invoice.</p></div></div>
         <PrimaryBtn Icon={ReceiptText} onClick={() => setPage("claim")}>Pergi ke Claim / Bil</PrimaryBtn>
       </div>
+
+      {dayView && (() => {
+        const day = days.find((x) => x.date === dayView) || { date: dayView, sessions: sessions.filter((s) => s.date === dayView), income: 0, hours: 0, doneCount: 0, plannedCount: 0 };
+        const list = [...day.sessions].sort((a, b) => a.start.localeCompare(b.start));
+        const atMax = list.length >= maxSlots;
+        return (
+          <Modal onClose={() => setDayView(null)} wide>
+            <div className="flex items-center justify-between">
+              <div><h3 className="text-base font-bold">{fmtDate(dayView)}</h3><p className="text-xs" style={{ color: SUB }}>{day.doneCount} selesai · {day.plannedCount} belum live · {day.hours}j</p></div>
+              <button onClick={() => setDayView(null)} className="rounded-lg p-1.5" style={{ color: SUB }}><X size={18} /></button>
+            </div>
+            <div className="mt-4 flex flex-col gap-2">
+              {list.length === 0 && <p className="py-6 text-center text-sm" style={{ color: SUB }}>Tiada slot pada hari ini.</p>}
+              {list.map((s) => {
+                const locked = data.lockedSessionIds.has(s.id); const col = data.bById[s.brandId]?.color || PURPLE;
+                return (
+                  <button key={s.id} onClick={() => openEdit(s)} className="flex items-center justify-between gap-3 rounded-xl border p-3 text-left transition-all hover:shadow-sm" style={{ borderColor: "#F1F0F6", background: isDone(s) ? "#FCFBFE" : "#FFFDF5" }}>
+                    <div className="flex min-w-0 items-center gap-2.5"><Dot color={col} /><div className="min-w-0"><p className="truncate text-sm font-bold">{s.brand}{locked && <Lock size={11} className="ml-1 inline" style={{ color: SUB }} />}</p><p className="text-xs" style={{ color: SUB }}>{fmtTime(s.start)} – {fmtTime(s.end)} · {s.hours}j</p></div></div>
+                    <div className="flex shrink-0 items-center gap-2"><span className="text-sm font-extrabold" style={{ color: PURPLE }}>{isDone(s) ? RM(s.income) : "—"}</span><Pill tone={isDone(s) ? "green" : "amber"}>{s.status}</Pill></div>
+                  </button>
+                );
+              })}
+              <div className="mt-1 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: LAV }}><span className="text-sm font-bold">Total Earning (Selesai)</span><span className="text-base font-extrabold" style={{ color: PURPLE }}>{RM(day.income)}</span></div>
+            </div>
+            {!atMax && <button onClick={() => openAdd(dayView)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)", boxShadow: "0 8px 18px rgba(109,40,217,0.28)" }}><Plus size={16} /> Tambah Slot</button>}
+          </Modal>
+        );
+      })()}
 
       {modal && <SlotModal init={modal} brands={brands} settings={settings} onClose={() => setModal(null)} onSave={(o) => { upsertSession(o); flash("Laporan slot disimpan!"); setModal(null); }} onDelete={(id) => { deleteSession(id); setModal(null); }} flash={flash} />}
     </>
