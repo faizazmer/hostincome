@@ -1021,7 +1021,7 @@ function SlotModal({ init, brands, settings, onClose, onSave, onDelete, flash })
         <div className="sm:col-span-2"><Field label="Company / Brand">
           <Select value={f.brandId} onChange={(v) => setF({ ...f, brandId: v })}>
             {brands.length === 0 && <option value="">— tiada brand, sila daftar —</option>}
-            {brands.map((b) => <option key={b.id} value={b.id}>{b.name} · {RM(b.rate)}/jam</option>)}
+            {brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
           </Select>
         </Field></div>
         <Field label="Tarikh"><Input type="date" value={f.date} onChange={(v) => setF({ ...f, date: v })} /></Field>
@@ -1033,7 +1033,7 @@ function SlotModal({ init, brands, settings, onClose, onSave, onDelete, flash })
         <Field label="Jumlah Sales (pilihan)"><Input type="number" placeholder="0.00" value={f.sales} onChange={(v) => setF({ ...f, sales: v })} /></Field>
         <Field label="Komisen (pilihan)"><Input type="number" placeholder="0.00" value={f.commission} onChange={(v) => setF({ ...f, commission: v })} /></Field>
         <Field label="KPI Achieved"><div className="flex gap-2">{[true, false].map((val) => (<button key={String(val)} onClick={() => setF({ ...f, kpi: val })} className="flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-all" style={f.kpi === val ? { background: val ? "#DCFCE7" : "#FEE2E2", color: val ? "#15803D" : "#DC2626", borderColor: "transparent" } : { borderColor: "#EEF0F4", color: SUB }}>{val ? "Yes" : "No"}</button>))}</div></Field>
-        <div><Field label="Rate (ikut tarikh slot)"><div className="rounded-xl border px-3.5 py-2.5 text-sm font-semibold" style={{ borderColor: "#E6E6EE", background: "#F8FAFC", color: SUB }}>{RM(rate)} / jam</div></Field></div>
+        <div><Field label="Rate / Jam (auto ikut tarikh)"><div className="flex items-center justify-between rounded-xl border px-3.5 py-2.5" style={{ borderColor: "#E4E0F5", background: LAV }}><span className="text-sm font-extrabold" style={{ color: PURPLE }}>{RM(rate)}</span><span className="text-[11px] font-semibold" style={{ color: SUB }}>ikut {fmtDateShort(f.date)}</span></div></Field></div>
         <div className="sm:col-span-2"><Field label="Nota (pilihan)"><Input value={f.note} placeholder="Contoh: Live promosi produk baru" onChange={(v) => setF({ ...f, note: v })} /></Field></div>
       </div>
       <div className="mt-5 grid grid-cols-3 gap-3 rounded-xl p-4" style={{ background: LAV }}>
@@ -1084,7 +1084,7 @@ function ClaimPage({ ctx }) {
           {/* FORM */}
           <Panel title="Buat Claim">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <div className="sm:col-span-3"><Field label="Brand / Company"><Select value={brandId} onChange={pickBrand}>{brands.map((b) => <option key={b.id} value={b.id}>{b.name} · {RM(b.rate)}/jam</option>)}</Select></Field></div>
+              <div className="sm:col-span-3"><Field label="Brand / Company"><Select value={brandId} onChange={pickBrand}>{brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select></Field></div>
               <Field label="Tarikh Mula"><Input type="date" value={start} onChange={setStart} /></Field>
               <Field label="Tarikh Akhir"><Input type="date" value={end} onChange={setEnd} /></Field>
               <div><Field label="Kitaran Brand"><div className="rounded-xl border px-3.5 py-2.5 text-sm font-semibold" style={{ borderColor: "#E6E6EE", background: "#F8FAFC", color: SUB }}>{brand ? DAYS_MS[brand.weekStart] : "-"}</div></Field></div>
