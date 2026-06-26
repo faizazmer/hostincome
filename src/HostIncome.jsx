@@ -961,9 +961,9 @@ function JadualMingguan({ ctx }) {
               {list.map((s) => {
                 const locked = data.lockedSessionIds.has(s.id); const col = data.bById[s.brandId]?.color || PURPLE;
                 return (
-                  <button key={s.id} onClick={() => openEdit(s)} className="flex items-center justify-between gap-3 rounded-xl border p-3 text-left transition-all hover:shadow-sm" style={{ borderColor: "#F1F0F6", background: isDone(s) ? "#FCFBFE" : "#FFFDF5" }}>
-                    <div className="flex min-w-0 items-center gap-2.5"><Dot color={col} /><div className="min-w-0"><p className="truncate text-sm font-bold">{s.brand}{locked && <Lock size={11} className="ml-1 inline" style={{ color: SUB }} />}</p><p className="text-xs" style={{ color: SUB }}>{fmtTime(s.start)} – {fmtTime(s.end)} · {s.hours}j</p></div></div>
-                    <div className="flex shrink-0 items-center gap-2"><span className="text-sm font-extrabold" style={{ color: PURPLE }}>{isDone(s) ? RM(s.income) : "—"}</span><Pill tone={isDone(s) ? "green" : "amber"}>{s.status}</Pill></div>
+                  <button key={s.id} onClick={() => openEdit(s)} className="flex items-center justify-between gap-3 rounded-xl border p-3 pl-3.5 text-left transition-all hover:shadow-sm" style={{ borderColor: isDone(s) ? "#BBF7D0" : "#FDE68A", borderLeft: `4px solid ${isDone(s) ? "#16A34A" : "#F59E0B"}`, background: isDone(s) ? "#F0FDF4" : "#FFFBEB" }}>
+                    <div className="flex min-w-0 items-center gap-2.5"><Dot color={col} /><div className="min-w-0"><p className="truncate text-sm font-bold">{s.brand}{locked && <Lock size={11} className="ml-1 inline" style={{ color: SUB }} />}</p><p className="text-xs" style={{ color: "#475569" }}>{fmtTime(s.start)} – {fmtTime(s.end)} · {s.hours}j</p></div></div>
+                    <div className="flex shrink-0 items-center gap-2"><span className="text-sm font-extrabold" style={{ color: isDone(s) ? "#15803D" : "#B45309" }}>{isDone(s) ? RM(s.income) : "—"}</span>{isDone(s) ? <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: "#DCFCE7", color: "#15803D" }}><CheckCircle2 size={12} />Selesai</span> : <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: "#FEF3C7", color: "#B45309" }}><span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: "#F59E0B" }} />Belum Live</span>}</div>
                   </button>
                 );
               })}
