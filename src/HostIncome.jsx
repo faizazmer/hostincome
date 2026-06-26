@@ -563,6 +563,13 @@ export default function HostIncome() {
     if (cloud && fb.current) { fb.current.update(fb.current.path(`claims/${id}`), patch); flash("Bayaran direkodkan."); return; }
     setClaims((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c))); flash("Bayaran direkodkan.");
   }
+  function reopenClaim(id) {
+    const c = claims.find((x) => x.id === id); if (!c) return;
+    if (c.paid && !isAdmin) { flash("Hanya admin boleh buka semula invois yang sudah dibayar."); return; }
+    if (cloud && fb.current) { fb.current.remove(fb.current.path(`claims/${id}`)); }
+    else { setClaims((prev) => prev.filter((x) => x.id !== id)); }
+    flash("Invois dibuka semula. Slot kini boleh diedit di Jadual.");
+  }
   function saveSettings(s) {
     if (cloud && fb.current) fb.current.set(fb.current.path("settings"), s);
     setSettings(s); flash("Tetapan disimpan.");
@@ -579,7 +586,7 @@ export default function HostIncome() {
     { id: "tetapan", label: "Tetapan", Icon: SettingsIcon },
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, setPage, flash, isAdmin, authUser, profile, users, login, register, logout, setUserRole, setUserStatus, deleteUserRecord, resendVerification, reloadUser };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setPage, flash, isAdmin, authUser, profile, users, login, register, logout, setUserRole, setUserStatus, deleteUserRecord, resendVerification, reloadUser };
 
   if (USE_FB && !authReady) return <FullLoader text="Memuatkan…" />;
   if (USE_FB && !authUser) return <AuthScreen onLogin={login} onRegister={register} />;
@@ -839,7 +846,7 @@ function JadualMingguan({ ctx }) {
     if (mode === "month") setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1));
     else setCursor(addDays(cursor, dir * (mode === "2week" ? 14 : 7)));
   }
-  function openEdit(s) { if (data.lockedSessionIds.has(s.id)) { flash("Slot dikunci — sudah dibil/invois."); return; } setDayView(null); setModal({ date: s.date, session: s }); }
+  function openEdit(s) { if (data.lockedSessionIds.has(s.id)) { flash("Slot dikunci (dalam invois). Buka semula invois di halaman Invoice untuk edit."); return; } setDayView(null); setModal({ date: s.date, session: s }); }
   function openAdd(date) {
     if (brands.length === 0) { flash("Daftar brand dahulu di halaman Brand."); return; }
     const list = sessions.filter((s) => s.date === date);
@@ -1289,7 +1296,7 @@ function Invoice({ ctx }) {
 }
 
 function InvoiceModal({ invId, ctx, onClose }) {
-  const { data, settings, sessions, brands, markClaimPaid } = ctx;
+  const { data, settings, sessions, brands, markClaimPaid, reopenClaim, isAdmin, setPage } = ctx;
   const inv = data.invoices.find((w) => w.id === invId);
   const [ref, setRef] = useState("");
   const brandInfo = brands.find((b) => b.id === inv?.brandId);
@@ -1375,6 +1382,8 @@ function InvoiceModal({ invId, ctx, onClose }) {
         <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4" }}><Printer size={15} style={{ color: PURPLE }} /> Print</button>
         <button onClick={share} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ background: "#25D366" }}><Share2 size={15} /> Share WhatsApp</button>
         {!inv.paid && <div className="flex items-center gap-2"><input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Payment ref (pilihan)" className="rounded-xl border px-3 py-2.5 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} /><button onClick={() => { markClaimPaid(inv.id, ref); setRef(""); }} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ background: "#16A34A" }}><CheckCircle2 size={15} /> Mark As Paid</button></div>}
+        {!inv.paid && <button onClick={() => { if (confirm("Buka semula invois ini? Invois akan dipadam dan slot boleh diedit semula di Jadual.")) { reopenClaim(inv.id); onClose(); setPage("jadual"); } }} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold" style={{ borderColor: "#FDE68A", color: "#B45309", background: "#FFFBEB" }}><Pencil size={15} /> Buka Semula & Edit</button>}
+        {inv.paid && isAdmin && <button onClick={() => { if (confirm("AMARAN: Invois ini SUDAH DIBAYAR.\n\nBuka semula akan PADAM invois & rekod bayaran ini, dan slot kembali boleh diedit di Jadual. Teruskan?")) { reopenClaim(inv.id); onClose(); setPage("jadual"); } }} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold" style={{ borderColor: "#FECACA", color: "#DC2626", background: "#FEF2F2" }}><Lock size={15} /> Buka Semula (Admin)</button>}
       </div>
     </Modal>
   );
