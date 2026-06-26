@@ -29,10 +29,10 @@ const DAYS_MS = ["Ahad", "Isnin", "Selasa", "Rabu", "Khamis", "Jumaat", "Sabtu"]
 const DAYS_SHORT = ["Ahd", "Isn", "Sel", "Rab", "Kha", "Jum", "Sab"];
 const MONTHS_MS = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
 const MONTHS_FULL = ["Januari", "Februari", "Mac", "April", "Mei", "Jun", "Julai", "Ogos", "September", "Oktober", "November", "Disember"];
-const TODAY = new Date(2026, 5, 24); // Rabu 24 Jun 2026
-const NOW_BASE = new Date(2026, 5, 24, 16, 0, 0); // 'sekarang' simulasi: 4:00 PM, 24 Jun 2026
-function sessionStartDate(s) { const d = parseISO(s.date); const [h, m] = s.start.split(":").map(Number); d.setHours(h, m, 0, 0); return d; }
 function nowMYT() { return new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Kuala_Lumpur" })); }
+function todayMYT() { const n = nowMYT(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); }
+const TODAY = todayMYT(); // tarikh sebenar mengikut Waktu Malaysia
+function sessionStartDate(s) { const d = parseISO(s.date); const [h, m] = s.start.split(":").map(Number); d.setHours(h, m, 0, 0); return d; }
 
 function iso(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 function parseISO(s) { const [y, m, d] = s.split("-").map(Number); return new Date(y, m - 1, d); }
@@ -815,62 +815,91 @@ function Dashboard({ ctx }) {
 function JadualMingguan({ ctx }) {
   const { brands, sessions, data, settings, upsertSession, deleteSession, setPage, flash } = ctx;
   const maxSlots = settings.maxSlots || 4;
-  const [offset, setOffset] = useState(0);
+  const [mode, setMode] = useState("week"); // week | 2week | month
+  const [cursor, setCursor] = useState(() => new Date(TODAY));
   const [modal, setModal] = useState(null);
 
-  const weekMon = addDays(getMonday(TODAY), offset * 7);
-  const days = Array.from({ length: 7 }, (_, i) => {
-    const d = addDays(weekMon, i), ds = iso(d);
-    const list = sessions.filter((s) => s.date === ds).sort((a, b) => a.start.localeCompare(b.start));
-    return { date: ds, dow: d.getDay(), today: ds === data.todayStr, sessions: list, hours: list.filter(isDone).reduce((a, x) => a + x.hours, 0), income: list.filter(isDone).reduce((a, x) => a + x.income, 0) };
-  });
-  const weekLabel = `${fmtDateShort(iso(weekMon))} – ${fmtDateShort(iso(addDays(weekMon, 6)))} ${weekMon.getFullYear()}`;
+  const compact = mode !== "week";
+  const monthIdx = cursor.getMonth();
+  let gridStart, count;
+  if (mode === "month") { gridStart = getMonday(new Date(cursor.getFullYear(), cursor.getMonth(), 1)); count = 42; }
+  else { gridStart = getMonday(cursor); count = mode === "2week" ? 14 : 7; }
 
+  const days = Array.from({ length: count }, (_, i) => {
+    const d = addDays(gridStart, i), ds = iso(d);
+    const list = sessions.filter((s) => s.date === ds).sort((a, b) => a.start.localeCompare(b.start));
+    return { date: ds, d, dow: d.getDay(), today: ds === data.todayStr, past: ds < data.todayStr, inMonth: d.getMonth() === monthIdx, sessions: list, hours: list.filter(isDone).reduce((a, x) => a + x.hours, 0), income: list.filter(isDone).reduce((a, x) => a + x.income, 0) };
+  });
+  const first = days[0].d, last = days[days.length - 1].d;
+  const label = mode === "month" ? `${MONTHS_FULL[monthIdx]} ${cursor.getFullYear()}` : `${fmtDateShort(iso(first))} – ${fmtDateShort(iso(last))} ${last.getFullYear()}`;
+
+  function shift(dir) {
+    if (mode === "month") setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1));
+    else setCursor(addDays(cursor, dir * (mode === "2week" ? 14 : 7)));
+  }
   function openEdit(s) { if (data.lockedSessionIds.has(s.id)) { flash("Slot dikunci — sudah dibil/invois."); return; } setModal({ date: s.date, session: s }); }
   function openAdd(day) {
     if (brands.length === 0) { flash("Daftar brand dahulu di halaman Brand."); return; }
     if (day.sessions.length >= maxSlots) { flash(`Maksimum ${maxSlots} slot sehari.`); return; }
-    const last = [...day.sessions].sort((a, b) => a.start.localeCompare(b.start)).pop();
-    const startH = last ? parseInt(last.end) : 10;
+    const lastS = [...day.sessions].sort((a, b) => a.start.localeCompare(b.start)).pop();
+    const startH = lastS ? parseInt(lastS.end) : 10;
     setModal({ date: day.date, session: null, start: `${pad(Math.min(22, startH))}:00`, end: `${pad(Math.min(23, startH + 2))}:00` });
   }
 
+  const Seg = ({ id, t }) => (
+    <button onClick={() => setMode(id)} className="rounded-lg px-3 py-1.5 text-xs font-bold transition-colors" style={mode === id ? { background: PURPLE, color: "#fff" } : { color: SUB }}>{t}</button>
+  );
+
   return (
     <>
-      <PageHead title="Jadual Host Mingguan" subtitle="Kalendar mingguan · klik slot untuk isi laporan"
+      <PageHead title="Jadual Host" subtitle="Klik slot untuk isi laporan · klik hari untuk tambah"
         right={
-          <div className="flex items-center gap-2">
-            <button onClick={() => setOffset(offset - 1)} className="rounded-xl border bg-white p-2.5" style={{ borderColor: "#EEF0F4" }}><ChevronLeft size={16} style={{ color: PURPLE }} /></button>
-            <div className="min-w-[150px] rounded-xl border bg-white px-3 py-2 text-center text-sm font-semibold" style={{ borderColor: "#EEF0F4" }}>{weekLabel}</div>
-            <button onClick={() => setOffset(offset + 1)} className="rounded-xl border bg-white p-2.5" style={{ borderColor: "#EEF0F4" }}><ChevronRight size={16} style={{ color: PURPLE }} /></button>
-            {offset !== 0 && <button onClick={() => setOffset(0)} className="rounded-xl px-3 py-2 text-sm font-bold text-white" style={{ background: PURPLE }}>Hari Ini</button>}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 rounded-xl border bg-white p-1" style={{ borderColor: "#EEF0F4" }}><Seg id="week" t="Minggu" /><Seg id="2week" t="2 Minggu" /><Seg id="month" t="Bulan" /></div>
+            <button onClick={() => shift(-1)} className="rounded-xl border bg-white p-2.5" style={{ borderColor: "#EEF0F4" }}><ChevronLeft size={16} style={{ color: PURPLE }} /></button>
+            <div className="min-w-[140px] rounded-xl border bg-white px-3 py-2 text-center text-sm font-semibold" style={{ borderColor: "#EEF0F4" }}>{label}</div>
+            <button onClick={() => shift(1)} className="rounded-xl border bg-white p-2.5" style={{ borderColor: "#EEF0F4" }}><ChevronRight size={16} style={{ color: PURPLE }} /></button>
+            <button onClick={() => setCursor(new Date(TODAY))} className="rounded-xl px-3 py-2 text-sm font-bold text-white" style={{ background: PURPLE }}>Hari Ini</button>
           </div>
         } />
 
-      <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+      {compact && (
+        <div className="mb-1.5 hidden grid-cols-7 gap-1.5 sm:grid">
+          {["Isn", "Sel", "Rab", "Kha", "Jum", "Sab", "Ahd"].map((d) => <div key={d} className="px-1 text-center text-[11px] font-bold" style={{ color: SUB }}>{d}</div>)}
+        </div>
+      )}
+
+      <div className={compact ? "grid grid-cols-7 gap-1.5" : "grid grid-cols-2 gap-2.5 sm:grid-cols-4 xl:grid-cols-7"}>
         {days.map((day) => {
           const atMax = day.sessions.length >= maxSlots;
+          const faded = mode === "month" && !day.inMonth;
+          const shown = compact ? day.sessions.slice(0, 2) : day.sessions;
+          const extra = day.sessions.length - shown.length;
           return (
-            <div key={day.date} className="flex flex-col rounded-xl border bg-white p-2.5" style={{ borderColor: day.today ? "#C4B5FD" : "#EEF0F4", boxShadow: day.today ? "0 6px 16px rgba(109,40,217,0.12)" : "none", minHeight: 150 }}>
+            <div key={day.date} onClick={compact ? () => openAdd(day) : undefined}
+              className={`flex flex-col rounded-xl border bg-white p-2 ${compact ? "cursor-pointer" : ""}`}
+              style={{ borderColor: day.today ? "#C4B5FD" : "#EEF0F4", boxShadow: day.today ? "0 4px 12px rgba(109,40,217,0.12)" : "none", minHeight: compact ? (mode === "month" ? 92 : 122) : 150, opacity: faded ? 0.45 : 1 }}>
               <div className="flex items-center justify-between">
-                <p className="text-xs font-bold" style={{ color: day.today ? PURPLE : INK }}>{DAYS_SHORT[day.dow]} <span className="font-normal" style={{ color: SUB }}>{parseISO(day.date).getDate()}</span></p>
-                {day.today && <span className="h-1.5 w-1.5 rounded-full" style={{ background: PURPLE }} />}
+                <p className="text-xs font-bold" style={{ color: day.today ? PURPLE : INK }}>{!compact && DAYS_SHORT[day.dow] + " "}<span className={compact ? "" : "font-normal"} style={{ color: compact ? (day.today ? PURPLE : INK) : SUB }}>{day.d.getDate()}</span></p>
+                {day.today && <span className="rounded-full px-1.5 text-[9px] font-bold text-white" style={{ background: PURPLE }}>Hari Ini</span>}
               </div>
-              <div className="mt-2 flex flex-1 flex-col gap-1.5">
-                {day.sessions.map((s) => {
+              <div className="mt-1.5 flex flex-1 flex-col gap-1">
+                {shown.map((s) => {
                   const locked = data.lockedSessionIds.has(s.id); const col = data.bById[s.brandId]?.color || PURPLE;
                   return (
-                    <button key={s.id} onClick={() => openEdit(s)} className="group rounded-lg border p-1.5 text-left transition-all" style={{ borderColor: "#F1F0F6", background: isDone(s) ? "#FCFBFE" : "#FFFDF5", cursor: locked ? "default" : "pointer" }} onMouseEnter={(e) => { if (!locked) e.currentTarget.style.borderColor = col; }} onMouseLeave={(e) => { e.currentTarget.style.borderColor = "#F1F0F6"; }}>
-                      <div className="flex items-center gap-1"><Dot color={col} size={7} /><span className="truncate text-[11px] font-semibold leading-tight">{s.brand}</span>{locked && <Lock size={9} style={{ color: SUB }} />}</div>
-                      <div className="mt-0.5 flex items-center justify-between text-[10px]" style={{ color: SUB }}><span>{fmtTimeShort(s.start)}-{fmtTimeShort(s.end)}</span><span className="font-bold" style={{ color: isDone(s) ? PURPLE : "#B45309" }}>{isDone(s) ? RM(s.income).replace(".00", "") : "•"}</span></div>
+                    <button key={s.id} onClick={(e) => { e.stopPropagation(); openEdit(s); }} className="rounded-lg border p-1 text-left" style={{ borderColor: "#F1F0F6", background: isDone(s) ? "#FCFBFE" : "#FFFDF5" }}>
+                      <div className="flex items-center gap-1"><Dot color={col} size={6} /><span className="truncate text-[10px] font-semibold leading-tight">{compact ? fmtTimeShort(s.start) : s.brand}</span>{locked && <Lock size={8} style={{ color: SUB }} />}</div>
+                      {!compact && <div className="mt-0.5 flex items-center justify-between text-[10px]" style={{ color: SUB }}><span>{fmtTimeShort(s.start)}-{fmtTimeShort(s.end)}</span><span className="font-bold" style={{ color: isDone(s) ? PURPLE : "#B45309" }}>{isDone(s) ? RM(s.income).replace(".00", "") : "•"}</span></div>}
+                      {compact && <div className="text-[9px] font-bold" style={{ color: isDone(s) ? PURPLE : "#B45309" }}>{isDone(s) ? RM(s.income).replace(".00", "") : "•"}</div>}
                     </button>
                   );
                 })}
-                {!atMax && (
-                  <button onClick={() => openAdd(day)} className="flex items-center justify-center gap-1 rounded-lg border border-dashed py-1.5 text-[11px] font-semibold transition-all" style={{ borderColor: "#E4E0F5", color: PURPLE }} onMouseEnter={(e) => { e.currentTarget.style.background = LAV; }} onMouseLeave={(e) => { e.currentTarget.style.background = "transparent"; }}><Plus size={12} /> Slot</button>
+                {compact && extra > 0 && <span className="text-[10px] font-semibold" style={{ color: PURPLE }}>+{extra} lagi</span>}
+                {!compact && !atMax && (
+                  <button onClick={() => openAdd(day)} className="flex items-center justify-center gap-1 rounded-lg border border-dashed py-1.5 text-[11px] font-semibold" style={{ borderColor: "#E4E0F5", color: PURPLE }}><Plus size={12} /> Slot</button>
                 )}
               </div>
-              <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[10px]" style={{ borderColor: "#F1F0F6" }}><span style={{ color: SUB }}>{day.hours}j</span><span className="font-bold">{RM(day.income).replace(".00", "")}</span></div>
+              {!compact && <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[10px]" style={{ borderColor: "#F1F0F6" }}><span style={{ color: SUB }}>{day.hours}j</span><span className="font-bold">{RM(day.income).replace(".00", "")}</span></div>}
             </div>
           );
         })}
@@ -885,7 +914,6 @@ function JadualMingguan({ ctx }) {
     </>
   );
 }
-
 function SlotModal({ init, brands, settings, onClose, onSave, onDelete, flash }) {
   const editing = !!init.session;
   const [f, setF] = useState(() => ({
