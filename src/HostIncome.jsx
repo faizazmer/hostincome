@@ -867,6 +867,12 @@ function JadualMingguan({ ctx }) {
           </div>
         } />
 
+      {!compact && (
+        <div className="mb-3 flex items-center gap-4 text-[11px] font-semibold" style={{ color: "#475569" }}>
+          <span className="inline-flex items-center gap-1.5"><span className="h-3 w-1 rounded" style={{ background: "#16A34A" }} /> Selesai</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-3 w-1 rounded" style={{ background: "#F59E0B" }} /> Belum Live</span>
+        </div>
+      )}
       {compact && (
         <div className="mb-1.5 grid grid-cols-7 gap-1.5">
           {["Isn", "Sel", "Rab", "Kha", "Jum", "Sab", "Ahd"].map((d) => <div key={d} className="px-1 text-center text-[11px] font-bold" style={{ color: SUB }}>{d}</div>)}
@@ -918,9 +924,9 @@ function JadualMingguan({ ctx }) {
                   {day.sessions.map((s) => {
                     const locked = data.lockedSessionIds.has(s.id); const col = data.bById[s.brandId]?.color || PURPLE;
                     return (
-                      <button key={s.id} onClick={() => openEdit(s)} className="rounded-lg border p-1.5 text-left transition-all" style={{ borderColor: "#F1F0F6", background: isDone(s) ? "#FCFBFE" : "#FFFDF5" }}>
+                      <button key={s.id} onClick={() => openEdit(s)} className="rounded-lg border p-1.5 pl-2 text-left transition-all" style={{ borderColor: isDone(s) ? "#BBF7D0" : "#FDE68A", borderLeft: `3px solid ${isDone(s) ? "#16A34A" : "#F59E0B"}`, background: isDone(s) ? "#F0FDF4" : "#FFFBEB" }}>
                         <div className="flex items-center gap-1"><Dot color={col} size={7} /><span className="truncate text-[11px] font-semibold leading-tight">{s.brand}</span>{locked && <Lock size={9} style={{ color: SUB }} />}</div>
-                        <div className="mt-0.5 flex items-center justify-between text-[10px]" style={{ color: SUB }}><span>{fmtTimeShort(s.start)}-{fmtTimeShort(s.end)}</span><span className="font-bold" style={{ color: isDone(s) ? PURPLE : "#B45309" }}>{isDone(s) ? RM(s.income).replace(".00", "") : "•"}</span></div>
+                        <div className="mt-0.5 flex items-center justify-between text-[11px]"><span style={{ color: "#475569" }}>{fmtTimeShort(s.start)}-{fmtTimeShort(s.end)}</span>{isDone(s) ? <span className="inline-flex items-center gap-0.5 font-bold" style={{ color: "#15803D" }}><CheckCircle2 size={10} />{RM(s.income).replace(".00", "")}</span> : <span className="inline-flex items-center gap-0.5 font-bold" style={{ color: "#B45309" }}><span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: "#F59E0B" }} />Live</span>}</div>
                       </button>
                     );
                   })}
@@ -928,7 +934,7 @@ function JadualMingguan({ ctx }) {
                     <button onClick={() => openAdd(day.date)} className="flex items-center justify-center gap-1 rounded-lg border border-dashed py-1.5 text-[11px] font-semibold" style={{ borderColor: "#E4E0F5", color: PURPLE }}><Plus size={12} /> Slot</button>
                   )}
                 </div>
-                <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[10px]" style={{ borderColor: "#F1F0F6" }}><span style={{ color: SUB }}>{day.hours}j</span><span className="font-bold">{RM(day.income).replace(".00", "")}</span></div>
+                <div className="mt-2 flex items-center justify-between border-t pt-1.5 text-[11px]" style={{ borderColor: "#F1F0F6" }}><span className="flex items-center gap-1.5">{day.doneCount > 0 && <span className="font-bold" style={{ color: "#15803D" }}>{day.doneCount}✓</span>}{day.plannedCount > 0 && <span className="font-bold" style={{ color: "#B45309" }}>{day.plannedCount}•</span>}</span><span className="font-bold" style={{ color: INK }}>{RM(day.income).replace(".00", "")}</span></div>
               </div>
             );
           })}
