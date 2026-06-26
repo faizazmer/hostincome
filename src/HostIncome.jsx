@@ -49,6 +49,13 @@ function brandSlug(b) { return ((b || "SESI").replace(/[^A-Za-z0-9]/g, "").toUpp
 const isDone = (s) => s.status === "Selesai";
 function cycleStart(dateStr, weekStart) { const d = parseISO(dateStr); const diff = (d.getDay() - weekStart + 7) % 7; return iso(addDays(d, -diff)); }
 function rangeLabel(start, end) { return `${fmtDateShort(start)} – ${fmtDateShort(end)} ${parseISO(start).getFullYear()}`; }
+function rateForDate(brand, dateStr) {
+  const hist = (brand && brand.rates && brand.rates.length) ? brand.rates : [{ from: "2000-01-01", rate: (brand && brand.rate) || 0 }];
+  const sorted = [...hist].sort((a, b) => a.from.localeCompare(b.from));
+  let r = sorted[0].rate;
+  for (const e of sorted) { if (e.from <= dateStr) r = e.rate; }
+  return Number(r) || 0;
+}
 
 /* ---------- SEED ---------- */
 const SEED_BRANDS = [
@@ -994,7 +1001,7 @@ function SlotModal({ init, brands, settings, onClose, onSave, onDelete, flash })
     note: init.session?.note ?? "", status: init.session?.status ?? "Belum Live",
   }));
   const brand = brands.find((b) => b.id === f.brandId) || brands[0];
-  const rate = brand?.rate || 0;
+  const rate = rateForDate(brand, f.date);
   const hours = useMemo(() => durHours(f.start, f.end), [f.start, f.end]);
   const hourly = hours * rate, total = hourly + Number(f.commission || 0);
 
@@ -1026,7 +1033,7 @@ function SlotModal({ init, brands, settings, onClose, onSave, onDelete, flash })
         <Field label="Jumlah Sales (pilihan)"><Input type="number" placeholder="0.00" value={f.sales} onChange={(v) => setF({ ...f, sales: v })} /></Field>
         <Field label="Komisen (pilihan)"><Input type="number" placeholder="0.00" value={f.commission} onChange={(v) => setF({ ...f, commission: v })} /></Field>
         <Field label="KPI Achieved"><div className="flex gap-2">{[true, false].map((val) => (<button key={String(val)} onClick={() => setF({ ...f, kpi: val })} className="flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-all" style={f.kpi === val ? { background: val ? "#DCFCE7" : "#FEE2E2", color: val ? "#15803D" : "#DC2626", borderColor: "transparent" } : { borderColor: "#EEF0F4", color: SUB }}>{val ? "Yes" : "No"}</button>))}</div></Field>
-        <div><Field label="Rate (auto dari brand)"><div className="rounded-xl border px-3.5 py-2.5 text-sm font-semibold" style={{ borderColor: "#E6E6EE", background: "#F8FAFC", color: SUB }}>{RM(rate)} / jam</div></Field></div>
+        <div><Field label="Rate (ikut tarikh slot)"><div className="rounded-xl border px-3.5 py-2.5 text-sm font-semibold" style={{ borderColor: "#E6E6EE", background: "#F8FAFC", color: SUB }}>{RM(rate)} / jam</div></Field></div>
         <div className="sm:col-span-2"><Field label="Nota (pilihan)"><Input value={f.note} placeholder="Contoh: Live promosi produk baru" onChange={(v) => setF({ ...f, note: v })} /></Field></div>
       </div>
       <div className="mt-5 grid grid-cols-3 gap-3 rounded-xl p-4" style={{ background: LAV }}>
@@ -1141,28 +1148,42 @@ function ClaimPage({ ctx }) {
 /* ============================================================ 4. BRAND REGISTRY */
 function BrandPage({ ctx }) {
   const { brands, sessions, addBrand, updateBrand, deleteBrand } = ctx;
-  const [form, setForm] = useState({ name: "", rate: 25, weekStart: 1, phone: "", address: "", logo: "" });
+  const blank = { name: "", weekStart: 1, phone: "", address: "", logo: "", rates: [{ from: iso(TODAY), rate: 25 }] };
+  const [form, setForm] = useState(blank);
   const [editId, setEditId] = useState(null);
+
+  function setRate(i, key, val) { const r = form.rates.map((x, idx) => (idx === i ? { ...x, [key]: val } : x)); setForm({ ...form, rates: r }); }
+  function addRate() { const lastRate = form.rates[form.rates.length - 1]?.rate || 25; setForm({ ...form, rates: [...form.rates, { from: iso(TODAY), rate: lastRate }] }); }
+  function removeRate(i) { setForm({ ...form, rates: form.rates.filter((_, idx) => idx !== i) }); }
+
   function submit() {
     if (!form.name.trim()) { ctx.flash("Sila isi nama brand."); return; }
-    const payload = { name: form.name.trim(), rate: Number(form.rate || 0), weekStart: Number(form.weekStart), phone: form.phone.trim(), address: form.address.trim(), logo: form.logo };
+    let rates = form.rates.map((r) => ({ from: r.from, rate: Number(r.rate || 0) })).filter((r) => r.from).sort((a, b) => a.from.localeCompare(b.from));
+    if (rates.length === 0) rates = [{ from: iso(TODAY), rate: 0 }];
+    const current = rateForDate({ rates }, iso(TODAY));
+    const payload = { name: form.name.trim(), weekStart: Number(form.weekStart), phone: form.phone.trim(), address: form.address.trim(), logo: form.logo, rate: current, rates };
     if (editId) { updateBrand({ id: editId, ...payload }); setEditId(null); }
     else addBrand(payload);
-    setForm({ name: "", rate: 25, weekStart: 1, phone: "", address: "", logo: "" });
+    setForm(blank);
   }
-  function edit(b) { setEditId(b.id); setForm({ name: b.name, rate: b.rate, weekStart: b.weekStart, phone: b.phone || "", address: b.address || "", logo: b.logo || "" }); }
+  function edit(b) {
+    setEditId(b.id);
+    const rates = (b.rates && b.rates.length) ? b.rates.map((r) => ({ ...r })) : [{ from: iso(TODAY), rate: b.rate }];
+    setForm({ name: b.name, weekStart: b.weekStart, phone: b.phone || "", address: b.address || "", logo: b.logo || "", rates });
+  }
   return (
     <>
-      <PageHead title="Brand / Company" subtitle="Daftar brand dengan rate, kitaran bil, logo & maklumat syarikat untuk invoice rasmi." />
+      <PageHead title="Brand / Company" subtitle="Daftar brand, rate ikut tarikh, kitaran bil, logo & maklumat syarikat." />
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.5fr_1fr]">
         <Panel title="Senarai Brand">
           <div className="flex flex-col gap-3">
             {brands.length === 0 && <p className="py-6 text-center text-sm" style={{ color: SUB }}>Belum ada brand. Daftar di sebelah.</p>}
             {brands.map((b) => {
               const count = sessions.filter((s) => s.brandId === b.id).length;
+              const tiers = (b.rates && b.rates.length > 1);
               return (
                 <div key={b.id} className="flex items-center justify-between gap-3 rounded-xl border p-3.5" style={{ borderColor: "#F1F0F6" }}>
-                  <div className="flex min-w-0 items-center gap-3"><LogoBox src={b.logo} name={b.name} color={b.color} size={40} /><div className="min-w-0"><p className="truncate text-sm font-bold">{b.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{RM(b.rate)}/jam · kitaran {DAYS_MS[b.weekStart]} · {count} slot</p>{b.phone && <p className="truncate text-[11px]" style={{ color: SUB }}>{b.phone}</p>}</div></div>
+                  <div className="flex min-w-0 items-center gap-3"><LogoBox src={b.logo} name={b.name} color={b.color} size={40} /><div className="min-w-0"><p className="truncate text-sm font-bold">{b.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{RM(b.rate)}/jam{tiers ? " (berperingkat)" : ""} · kitaran {DAYS_MS[b.weekStart]} · {count} slot</p>{tiers && <p className="truncate text-[11px]" style={{ color: PURPLE }}>{[...b.rates].sort((a, c) => a.from.localeCompare(c.from)).map((r) => `${RM(r.rate)} dari ${fmtDateShort(r.from)}`).join(" → ")}</p>}</div></div>
                   <div className="flex shrink-0 items-center gap-1.5"><button onClick={() => edit(b)} className="rounded-lg border p-2" style={{ borderColor: "#EEF0F4" }}><Pencil size={14} style={{ color: PURPLE }} /></button><button onClick={() => deleteBrand(b.id)} className="rounded-lg border p-2" style={{ borderColor: "#FECACA" }}><Trash2 size={14} style={{ color: "#DC2626" }} /></button></div>
                 </div>
               );
@@ -1173,15 +1194,25 @@ function BrandPage({ ctx }) {
           <div className="flex flex-col gap-4">
             <Field label="Logo Company"><ImageUpload value={form.logo} onChange={(v) => setForm({ ...form, logo: v })} label="Muat Naik Logo" fallback={form.name ? form.name[0] : "?"} bg={PURPLE} /></Field>
             <Field label="Nama Brand / Company"><Input value={form.name} placeholder="cth: Glow Skincare Sdn Bhd" onChange={(v) => setForm({ ...form, name: v })} /></Field>
-            <div className="grid grid-cols-2 gap-3">
-              <Field label="Rate / Hour (RM)"><Input type="number" value={form.rate} onChange={(v) => setForm({ ...form, rate: v })} /></Field>
-              <Field label="Hari Mula Bil"><Select value={form.weekStart} onChange={(v) => setForm({ ...form, weekStart: Number(v) })}>{[1, 2, 3, 4, 5, 6, 0].map((d) => <option key={d} value={d}>{DAYS_MS[d]}</option>)}</Select></Field>
-            </div>
+            <Field label="Rate Per Hour (RM) — ikut tarikh">
+              <div className="flex flex-col gap-2">
+                {form.rates.map((r, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 rounded-xl border px-2.5" style={{ borderColor: "#E6E6EE" }}><span className="text-xs" style={{ color: SUB }}>RM</span><input type="number" value={r.rate} onChange={(e) => setRate(i, "rate", e.target.value)} className="w-14 bg-transparent py-2.5 text-sm outline-none" /></div>
+                    <span className="text-xs" style={{ color: SUB }}>dari</span>
+                    <input type="date" value={r.from} onChange={(e) => setRate(i, "from", e.target.value)} className="min-w-0 flex-1 rounded-xl border px-2.5 py-2.5 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} />
+                    {form.rates.length > 1 && <button onClick={() => removeRate(i)} className="rounded-lg border p-2" style={{ borderColor: "#FECACA" }}><Trash2 size={13} style={{ color: "#DC2626" }} /></button>}
+                  </div>
+                ))}
+                <button onClick={addRate} className="inline-flex items-center gap-1 self-start text-xs font-bold" style={{ color: PURPLE }}><Plus size={13} /> Tambah kenaikan rate</button>
+              </div>
+            </Field>
+            <p className="-mt-2 text-xs" style={{ color: SUB }}>Slot guna rate mengikut tarikhnya. Cth: RM45 mulai 1 Julai — slot Jun kekal RM40.</p>
+            <Field label="Hari Mula Bil"><Select value={form.weekStart} onChange={(v) => setForm({ ...form, weekStart: Number(v) })}>{[1, 2, 3, 4, 5, 6, 0].map((d) => <option key={d} value={d}>{DAYS_MS[d]}</option>)}</Select></Field>
             <Field label="No. Telefon"><Input value={form.phone} placeholder="+60 3-0000 0000" onChange={(v) => setForm({ ...form, phone: v })} /></Field>
             <Field label="Alamat"><Input value={form.address} placeholder="Alamat penuh syarikat" onChange={(v) => setForm({ ...form, address: v })} /></Field>
-            <p className="text-xs" style={{ color: SUB }}>Maklumat ini dipaparkan sebagai "Bill To" dalam invoice rasmi.</p>
             <div className="flex gap-2">
-              {editId && <button onClick={() => { setEditId(null); setForm({ name: "", rate: 25, weekStart: 1, phone: "", address: "", logo: "" }); }} className="rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Batal</button>}
+              {editId && <button onClick={() => { setEditId(null); setForm(blank); }} className="rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Batal</button>}
               <button onClick={submit} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)", boxShadow: "0 8px 18px rgba(109,40,217,0.28)" }}><CheckCircle2 size={16} /> {editId ? "Simpan" : "Daftar Brand"}</button>
             </div>
           </div>
