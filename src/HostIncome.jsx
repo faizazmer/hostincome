@@ -56,6 +56,26 @@ function rateForDate(brand, dateStr) {
   for (const e of sorted) { if (e.from <= dateStr) r = e.rate; }
   return Number(r) || 0;
 }
+// Kira komisen ikut struktur brand. Pulangkan null jika 'manual' (user isi sendiri).
+function computeCommission(brand, sales) {
+  const c = brand && brand.commission; const s = Number(sales || 0);
+  if (!c || c.type === "manual" || !c.type) return null;
+  if (c.type === "percent") return s * (Number(c.percent) || 0) / 100;
+  if (c.type === "kpi") { const th = Number(c.threshold) || 0; return s > th ? (s - th) * (Number(c.percent) || 0) / 100 : 0; }
+  if (c.type === "tiered") {
+    const tiers = [...(c.tiers || [])].map((t) => ({ min: Number(t.min) || 0, percent: Number(t.percent) || 0 })).sort((a, b) => a.min - b.min);
+    let pct = 0; for (const t of tiers) { if (s >= t.min) pct = t.percent; }
+    return s * pct / 100;
+  }
+  return null;
+}
+function commissionRuleLabel(c) {
+  if (!c || c.type === "manual" || !c.type) return "Manual";
+  if (c.type === "percent") return `${c.percent || 0}% × sales`;
+  if (c.type === "kpi") return `baki > ${RM(c.threshold || 0)} × ${c.percent || 0}%`;
+  if (c.type === "tiered") return `berperingkat`;
+  return "";
+}
 
 /* ---------- SEED ---------- */
 const SEED_BRANDS = [
@@ -1003,12 +1023,14 @@ function SlotModal({ init, brands, settings, onClose, onSave, onDelete, flash })
   const brand = brands.find((b) => b.id === f.brandId) || brands[0];
   const rate = rateForDate(brand, f.date);
   const hours = useMemo(() => durHours(f.start, f.end), [f.start, f.end]);
-  const hourly = hours * rate, total = hourly + Number(f.commission || 0);
+  const autoComm = computeCommission(brand, f.sales);
+  const commissionVal = autoComm != null ? autoComm : Number(f.commission || 0);
+  const hourly = hours * rate, total = hourly + commissionVal;
 
   function save() {
     if (!brand) { flash("Sila pilih brand."); return; }
     if (hours <= 0) { flash("Masa tamat mesti selepas masa mula."); return; }
-    onSave({ id: f.id, date: f.date, brandId: brand.id, brand: brand.name, start: f.start, end: f.end, hours, rate, commission: Number(f.commission || 0), sales: Number(f.sales || 0), kpi: f.kpi, note: f.note, income: total, status: f.status });
+    onSave({ id: f.id, date: f.date, brandId: brand.id, brand: brand.name, start: f.start, end: f.end, hours, rate, commission: commissionVal, sales: Number(f.sales || 0), kpi: f.kpi, note: f.note, income: total, status: f.status });
   }
 
   return (
@@ -1031,7 +1053,11 @@ function SlotModal({ init, brands, settings, onClose, onSave, onDelete, flash })
         <Field label="Masa Mula"><Input type="time" value={f.start} onChange={(v) => setF({ ...f, start: v })} /></Field>
         <Field label="Masa Tamat"><Input type="time" value={f.end} onChange={(v) => setF({ ...f, end: v })} /></Field>
         <Field label="Jumlah Sales (pilihan)"><Input type="number" placeholder="0.00" value={f.sales} onChange={(v) => setF({ ...f, sales: v })} /></Field>
-        <Field label="Komisen (pilihan)"><Input type="number" placeholder="0.00" value={f.commission} onChange={(v) => setF({ ...f, commission: v })} /></Field>
+        {autoComm != null ? (
+          <Field label="Komisen (auto ikut struktur brand)"><div className="flex items-center justify-between rounded-xl border px-3.5 py-2.5" style={{ borderColor: "#E4E0F5", background: LAV }}><span className="text-sm font-extrabold" style={{ color: PURPLE }}>{RM(autoComm)}</span><span className="text-[11px] font-semibold" style={{ color: SUB }}>{commissionRuleLabel(brand.commission)}</span></div></Field>
+        ) : (
+          <Field label="Komisen (isi sendiri)"><Input type="number" placeholder="0.00" value={f.commission} onChange={(v) => setF({ ...f, commission: v })} /></Field>
+        )}
         <Field label="KPI Achieved"><div className="flex gap-2">{[true, false].map((val) => (<button key={String(val)} onClick={() => setF({ ...f, kpi: val })} className="flex-1 rounded-xl border py-2.5 text-sm font-semibold transition-all" style={f.kpi === val ? { background: val ? "#DCFCE7" : "#FEE2E2", color: val ? "#15803D" : "#DC2626", borderColor: "transparent" } : { borderColor: "#EEF0F4", color: SUB }}>{val ? "Yes" : "No"}</button>))}</div></Field>
         <div><Field label="Rate / Jam (auto ikut tarikh)"><div className="flex items-center justify-between rounded-xl border px-3.5 py-2.5" style={{ borderColor: "#E4E0F5", background: LAV }}><span className="text-sm font-extrabold" style={{ color: PURPLE }}>{RM(rate)}</span><span className="text-[11px] font-semibold" style={{ color: SUB }}>ikut {fmtDateShort(f.date)}</span></div></Field></div>
         <div className="sm:col-span-2"><Field label="Nota (pilihan)"><Input value={f.note} placeholder="Contoh: Live promosi produk baru" onChange={(v) => setF({ ...f, note: v })} /></Field></div>
@@ -1148,7 +1174,7 @@ function ClaimPage({ ctx }) {
 /* ============================================================ 4. BRAND REGISTRY */
 function BrandPage({ ctx }) {
   const { brands, sessions, addBrand, updateBrand, deleteBrand } = ctx;
-  const blank = { name: "", weekStart: 1, phone: "", address: "", logo: "", rates: [{ from: iso(TODAY), rate: 25 }] };
+  const blank = { name: "", weekStart: 1, phone: "", address: "", logo: "", rates: [{ from: iso(TODAY), rate: 25 }], commission: { type: "manual" } };
   const [form, setForm] = useState(blank);
   const [editId, setEditId] = useState(null);
 
@@ -1156,12 +1182,30 @@ function BrandPage({ ctx }) {
   function addRate() { const lastRate = form.rates[form.rates.length - 1]?.rate || 25; setForm({ ...form, rates: [...form.rates, { from: iso(TODAY), rate: lastRate }] }); }
   function removeRate(i) { setForm({ ...form, rates: form.rates.filter((_, idx) => idx !== i) }); }
 
+  const comm = form.commission || { type: "manual" };
+  function setCommType(t) {
+    const base = { type: t };
+    if (t === "percent") base.percent = comm.percent ?? 5;
+    if (t === "kpi") { base.threshold = comm.threshold ?? 800; base.percent = comm.percent ?? 10; }
+    if (t === "tiered") base.tiers = comm.tiers ?? [{ min: 1000, percent: 5 }, { min: 2000, percent: 6 }];
+    setForm({ ...form, commission: base });
+  }
+  function setComm(key, val) { setForm({ ...form, commission: { ...comm, [key]: val } }); }
+  function setTier(i, key, val) { const t = (comm.tiers || []).map((x, idx) => (idx === i ? { ...x, [key]: val } : x)); setForm({ ...form, commission: { ...comm, tiers: t } }); }
+  function addTier() { setForm({ ...form, commission: { ...comm, tiers: [...(comm.tiers || []), { min: 0, percent: 0 }] } }); }
+  function removeTier(i) { setForm({ ...form, commission: { ...comm, tiers: (comm.tiers || []).filter((_, idx) => idx !== i) } }); }
+
   function submit() {
     if (!form.name.trim()) { ctx.flash("Sila isi nama brand."); return; }
     let rates = form.rates.map((r) => ({ from: r.from, rate: Number(r.rate || 0) })).filter((r) => r.from).sort((a, b) => a.from.localeCompare(b.from));
     if (rates.length === 0) rates = [{ from: iso(TODAY), rate: 0 }];
     const current = rateForDate({ rates }, iso(TODAY));
-    const payload = { name: form.name.trim(), weekStart: Number(form.weekStart), phone: form.phone.trim(), address: form.address.trim(), logo: form.logo, rate: current, rates };
+    const ct = comm.type || "manual";
+    let commission = { type: ct };
+    if (ct === "percent") commission.percent = Number(comm.percent || 0);
+    if (ct === "kpi") { commission.threshold = Number(comm.threshold || 0); commission.percent = Number(comm.percent || 0); }
+    if (ct === "tiered") commission.tiers = (comm.tiers || []).map((t) => ({ min: Number(t.min || 0), percent: Number(t.percent || 0) })).sort((a, b) => a.min - b.min);
+    const payload = { name: form.name.trim(), weekStart: Number(form.weekStart), phone: form.phone.trim(), address: form.address.trim(), logo: form.logo, rate: current, rates, commission };
     if (editId) { updateBrand({ id: editId, ...payload }); setEditId(null); }
     else addBrand(payload);
     setForm(blank);
@@ -1169,7 +1213,8 @@ function BrandPage({ ctx }) {
   function edit(b) {
     setEditId(b.id);
     const rates = (b.rates && b.rates.length) ? b.rates.map((r) => ({ ...r })) : [{ from: iso(TODAY), rate: b.rate }];
-    setForm({ name: b.name, weekStart: b.weekStart, phone: b.phone || "", address: b.address || "", logo: b.logo || "", rates });
+    const commission = b.commission ? { ...b.commission, tiers: b.commission.tiers ? b.commission.tiers.map((t) => ({ ...t })) : undefined } : { type: "manual" };
+    setForm({ name: b.name, weekStart: b.weekStart, phone: b.phone || "", address: b.address || "", logo: b.logo || "", rates, commission });
   }
   return (
     <>
@@ -1209,6 +1254,41 @@ function BrandPage({ ctx }) {
             </Field>
             <p className="-mt-2 text-xs" style={{ color: SUB }}>Slot guna rate mengikut tarikhnya. Cth: RM45 mulai 1 Julai — slot Jun kekal RM40.</p>
             <Field label="Hari Mula Bil"><Select value={form.weekStart} onChange={(v) => setForm({ ...form, weekStart: Number(v) })}>{[1, 2, 3, 4, 5, 6, 0].map((d) => <option key={d} value={d}>{DAYS_MS[d]}</option>)}</Select></Field>
+
+            <div className="rounded-xl border p-3" style={{ borderColor: "#EEF0F4", background: "#FCFBFE" }}>
+              <Field label="Struktur Komisen">
+                <Select value={comm.type} onChange={setCommType}>
+                  <option value="manual">Manual — isi sendiri setiap slot</option>
+                  <option value="percent">Peratus dari jumlah sales</option>
+                  <option value="kpi">Selepas KPI — baki × %</option>
+                  <option value="tiered">Berperingkat — capai RM, dapat %</option>
+                </Select>
+              </Field>
+              {comm.type === "percent" && (
+                <div className="mt-3"><Field label="Peratus dari sales (%)"><Input type="number" value={comm.percent ?? ""} onChange={(v) => setComm("percent", v)} placeholder="cth: 10" /></Field><p className="mt-1 text-[11px]" style={{ color: SUB }}>Komisen = sales × %. Cth sales RM100 × 10% = RM10.</p></div>
+              )}
+              {comm.type === "kpi" && (
+                <div className="mt-3 grid grid-cols-2 gap-3"><Field label="Sasaran KPI (RM)"><Input type="number" value={comm.threshold ?? ""} onChange={(v) => setComm("threshold", v)} placeholder="cth: 800" /></Field><Field label="Peratus baki (%)"><Input type="number" value={comm.percent ?? ""} onChange={(v) => setComm("percent", v)} placeholder="cth: 20" /></Field><p className="col-span-2 -mt-1 text-[11px]" style={{ color: SUB }}>Komisen = (sales − sasaran) × %. Cth sales RM1000, sasaran RM800 → RM200 × 20% = RM40. Bawah sasaran = RM0.</p></div>
+              )}
+              {comm.type === "tiered" && (
+                <div className="mt-3">
+                  <div className="mb-1 flex flex-col gap-2">
+                    {(comm.tiers || []).map((t, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-xs" style={{ color: SUB }}>≥ RM</span>
+                        <input type="number" value={t.min} onChange={(e) => setTier(i, "min", e.target.value)} className="w-20 rounded-xl border px-2.5 py-2 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} />
+                        <span className="text-xs" style={{ color: SUB }}>dapat</span>
+                        <input type="number" value={t.percent} onChange={(e) => setTier(i, "percent", e.target.value)} className="w-16 rounded-xl border px-2.5 py-2 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} />
+                        <span className="text-xs" style={{ color: SUB }}>%</span>
+                        {(comm.tiers || []).length > 1 && <button onClick={() => removeTier(i)} className="rounded-lg border p-1.5" style={{ borderColor: "#FECACA" }}><Trash2 size={12} style={{ color: "#DC2626" }} /></button>}
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={addTier} className="inline-flex items-center gap-1 text-xs font-bold" style={{ color: PURPLE }}><Plus size={13} /> Tambah peringkat</button>
+                  <p className="mt-1 text-[11px]" style={{ color: SUB }}>Komisen = sales × % peringkat tertinggi yang dicapai. Cth ≥RM1000 → 5%, ≥RM2000 → 6%.</p>
+                </div>
+              )}
+            </div>
             <Field label="No. Telefon"><Input value={form.phone} placeholder="+60 3-0000 0000" onChange={(v) => setForm({ ...form, phone: v })} /></Field>
             <Field label="Alamat"><Input value={form.address} placeholder="Alamat penuh syarikat" onChange={(v) => setForm({ ...form, address: v })} /></Field>
             <div className="flex gap-2">
