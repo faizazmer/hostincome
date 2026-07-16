@@ -964,6 +964,7 @@ function JadualMingguan({ ctx }) {
   const [modal, setModal] = useState(null);    // add/edit slot
   const [dayView, setDayView] = useState(null); // popup senarai slot 1 hari
   const [copyTo, setCopyTo] = useState("");
+  const [copyFrom, setCopyFrom] = useState("");
 
   const compact = mode !== "week";
   const monthIdx = cursor.getMonth();
@@ -1009,6 +1010,13 @@ function JadualMingguan({ ctx }) {
     });
     flash(`${added} slot disalin ke ${fmtDateShort(tgtDate)}.`); setCopyTo(""); setDayView(null);
   }
+  function copyOneSlot(s, tgtDate) {
+    const existing = sessions.filter((x) => x.date === tgtDate).length;
+    if (existing >= maxSlots) { flash(`Maksimum ${maxSlots} slot sehari.`); return; }
+    const b = brands.find((x) => x.id === s.brandId); const r = rateForDate(b, tgtDate);
+    upsertSession({ id: "s" + Date.now() + "_" + Math.floor(Math.random() * 1000), date: tgtDate, brandId: s.brandId, brand: s.brand, start: s.start, end: s.end, hours: s.hours, rate: r, commission: 0, sales: 0, kpi: s.kpi, note: s.note, income: s.hours * r, status: "Belum Live" });
+    flash("1 slot disalin.");
+  }
 
   const Seg = ({ id, t }) => (
     <button onClick={() => setMode(id)} className="rounded-lg px-3 py-1.5 text-xs font-bold transition-colors" style={mode === id ? { background: PURPLE, color: "#fff" } : { color: SUB }}>{t}</button>
@@ -1046,7 +1054,7 @@ function JadualMingguan({ ctx }) {
             const faded = mode === "month" && !day.inMonth;
             const empty = day.sessions.length === 0;
             return (
-              <button key={day.date} onClick={() => (empty ? openAdd(day.date) : setDayView(day.date))}
+              <button key={day.date} onClick={() => setDayView(day.date)}
                 className="flex flex-col rounded-xl border bg-white p-2 text-left transition-all hover:shadow-md"
                 style={{ borderColor: day.today ? "#C4B5FD" : "#EEF0F4", boxShadow: day.today ? "0 4px 12px rgba(109,40,217,0.12)" : "none", minHeight: mode === "month" ? 88 : 104, opacity: faded ? 0.5 : 1 }}>
                 <div className="flex items-center justify-between">
@@ -1078,7 +1086,7 @@ function JadualMingguan({ ctx }) {
               <div key={day.date} className="flex flex-col rounded-xl border bg-white p-2.5" style={{ borderColor: day.today ? "#C4B5FD" : "#EEF0F4", boxShadow: day.today ? "0 6px 16px rgba(109,40,217,0.12)" : "none", minHeight: 150 }}>
                 <div className="flex items-center justify-between">
                   <p className="text-xs font-bold" style={{ color: day.today ? PURPLE : INK }}>{DAYS_SHORT[day.dow]} <span className="font-normal" style={{ color: SUB }}>{day.d.getDate()}</span></p>
-                  {day.today && <span className="h-1.5 w-1.5 rounded-full" style={{ background: PURPLE }} />}
+                  <div className="flex items-center gap-1">{day.today && <span className="h-1.5 w-1.5 rounded-full" style={{ background: PURPLE }} />}<button onClick={() => setDayView(day.date)} title="Salin / lihat hari" className="rounded p-0.5" style={{ color: SUB }}><Copy size={12} /></button></div>
                 </div>
                 <div className="mt-2 flex flex-1 flex-col gap-1.5">
                   {day.sessions.map((s) => {
@@ -1129,17 +1137,26 @@ function JadualMingguan({ ctx }) {
               })}
               <div className="mt-1 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: LAV }}><span className="text-sm font-bold">Total Earning (Selesai)</span><span className="text-base font-extrabold" style={{ color: PURPLE }}>{RM(day.income)}</span></div>
             </div>
-            {list.length > 0 && (
-              <div className="mt-3 rounded-xl border p-3" style={{ borderColor: "#EEF0F4" }}>
-                <p className="mb-2 flex items-center gap-1.5 text-xs font-bold" style={{ color: SUB }}><Plus size={13} style={{ color: PURPLE }} /> Salin semua slot hari ini ke hari lain</p>
-                <div className="flex flex-wrap items-center gap-2">
-                  <input type="date" value={copyTo} onChange={(e) => setCopyTo(e.target.value)} className="rounded-xl border px-3 py-2 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} />
-                  <button onClick={() => copyDayTo(dayView, copyTo)} className="rounded-xl px-3.5 py-2 text-sm font-bold text-white" style={{ background: PURPLE }}>Salin</button>
-                  <button onClick={() => copyDayTo(dayView, iso(addDays(parseISO(dayView), 7)))} className="rounded-xl border px-3 py-2 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: PURPLE }}>→ Minggu depan</button>
-                </div>
-                <p className="mt-1.5 text-[11px]" style={{ color: SUB }}>Brand & masa disalin sebagai "Belum Live" (sales/komisen kosong).</p>
-              </div>
-            )}
+            <div className="mt-3 rounded-xl border p-3" style={{ borderColor: "#EEF0F4" }}>
+              <p className="mb-2 flex items-center gap-1.5 text-xs font-bold" style={{ color: SUB }}><Copy size={13} style={{ color: PURPLE }} /> Salin dari hari lain ke sini</p>
+              <input type="date" value={copyFrom} onChange={(e) => setCopyFrom(e.target.value)} className="w-full rounded-xl border px-3 py-2 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} />
+              {copyFrom && copyFrom !== dayView && (() => {
+                const srcList = sessions.filter((s) => s.date === copyFrom).sort((a, b) => a.start.localeCompare(b.start));
+                if (srcList.length === 0) return <p className="mt-2 text-xs" style={{ color: SUB }}>Tiada slot pada {fmtDateShort(copyFrom)}.</p>;
+                return (
+                  <div className="mt-2 flex flex-col gap-1.5">
+                    <button onClick={() => copyDayTo(copyFrom, dayView)} className="rounded-xl px-3 py-2 text-sm font-bold text-white" style={{ background: PURPLE }}>Salin semua ({srcList.length} slot)</button>
+                    {srcList.map((s) => (
+                      <div key={s.id} className="flex items-center justify-between gap-2 rounded-lg border p-2" style={{ borderColor: "#F1F0F6" }}>
+                        <span className="flex min-w-0 items-center gap-2 text-xs"><Dot color={data.bById[s.brandId]?.color || PURPLE} size={7} /><span className="truncate">{s.brand} · {fmtTimeShort(s.start)}-{fmtTimeShort(s.end)}</span></span>
+                        <button onClick={() => copyOneSlot(s, dayView)} className="shrink-0 rounded-lg border px-2.5 py-1 text-xs font-bold" style={{ borderColor: "#EEF0F4", color: PURPLE }}>Salin</button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+              <p className="mt-1.5 text-[11px]" style={{ color: SUB }}>Slot disalin sebagai "Belum Live" (sales/komisen kosong).</p>
+            </div>
             {!atMax && <button onClick={() => openAdd(dayView)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)", boxShadow: "0 8px 18px rgba(109,40,217,0.28)" }}><Plus size={16} /> Tambah Slot</button>}
           </Modal>
         );
