@@ -860,7 +860,27 @@ function fmtCountdown(ms) {
   const m = Math.floor(t / 60); const s = t % 60;
   return (d > 0 ? `${d}h ` : "") + `${pad(h)}:${pad(m)}:${pad(s)}`;
 }
-function NextLiveBar({ next, now, ctx }) {
+function NextLiveBar({ next, live, now, ctx }) {
+  if (live) {
+    const s = live.s;
+    const endMs = (() => { const en = new Date(sessionStartDate(s)); const [h, m] = s.end.split(":").map(Number); en.setHours(h, m, 0, 0); return en.getTime(); })();
+    return (
+      <div className="relative overflow-hidden rounded-2xl p-4 text-white sm:p-5" style={{ background: "linear-gradient(135deg,#EF4444,#DC2626)", boxShadow: "0 12px 30px rgba(220,38,38,0.32)" }}>
+        <div className="pointer-events-none absolute -right-8 -top-10 h-32 w-32 rounded-full" style={{ background: "rgba(255,255,255,0.12)" }} />
+        <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider"><span className="h-2.5 w-2.5 animate-pulse rounded-full bg-white" /> Sedang Live</p>
+            <p className="mt-1 truncate text-lg font-extrabold sm:text-xl">{s.brand}</p>
+            <p className="text-xs opacity-90">{fmtTime(s.start)} – {fmtTime(s.end)}</p>
+          </div>
+          <div className="shrink-0 rounded-xl px-3 py-2 text-center sm:text-right" style={{ background: "rgba(255,255,255,0.18)" }}>
+            <p className="text-[10px] uppercase tracking-wide opacity-90">tamat dalam</p>
+            <p className="font-mono text-2xl font-extrabold tabular-nums sm:text-3xl">{fmtCountdown(endMs - now)}</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
   if (!next) return (
     <div className="flex items-center justify-between rounded-2xl border p-4" style={{ borderColor: "#EEF0F4", background: "#fff" }}>
       <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl" style={{ background: LAV }}><CalendarRange size={18} style={{ color: PURPLE }} /></span><div><p className="text-sm font-bold">Tiada live dijadualkan</p><p className="text-xs" style={{ color: SUB }}>Tambah slot di Jadual untuk peringatan.</p></div></div>
@@ -900,6 +920,12 @@ function Dashboard({ ctx }) {
     return up[0] || null;
   }, [sessions, now]);
 
+  const live = useMemo(() => {
+    const nowMs = now.getTime();
+    const on = sessions.filter((s) => s.status === "Belum Live").map((s) => { const st = sessionStartDate(s); const en = new Date(st); const [h, m] = s.end.split(":").map(Number); en.setHours(h, m, 0, 0); return { s, st, en }; }).filter((x) => nowMs >= x.st.getTime() && nowMs < x.en.getTime()).sort((a, b) => a.en - b.en);
+    return on[0] || null;
+  }, [sessions, now]);
+
   const donut = data.todayDone.map((s, i) => ({ name: s.brand, value: s.income, color: data.bById[s.brandId]?.color || PALETTE[i % PALETTE.length] }));
   const hh = pad(now.getHours()), mm = pad(now.getMinutes()), ss = pad(now.getSeconds());
 
@@ -917,7 +943,7 @@ function Dashboard({ ctx }) {
       </div>
 
       {/* NEXT LIVE COUNTDOWN */}
-      <NextLiveBar next={next} now={now} ctx={ctx} />
+      <NextLiveBar next={next} live={live} now={now} ctx={ctx} />
 
       {/* STAT CARDS (3) */}
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
