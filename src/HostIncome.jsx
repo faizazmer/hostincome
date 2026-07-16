@@ -1222,16 +1222,6 @@ function SlotModal({ init, brands, settings, onClose, onSave, onDelete, onDuplic
         <div><p className="text-xs" style={{ color: SUB }}>Pendapatan Jam</p><p className="text-sm font-bold">{RM(hourly)}</p></div>
         <div><p className="text-xs" style={{ color: SUB }}>Total Income</p><p className="text-sm font-extrabold" style={{ color: PURPLE }}>{RM(total)}</p></div>
       </div>
-      <div className="mt-4 rounded-xl border p-3" style={{ borderColor: "#EEF0F4", background: "#FCFBFE" }}>
-        <p className="mb-2 flex items-center gap-1.5 text-xs font-bold" style={{ color: SUB }}><Copy size={13} style={{ color: PURPLE }} /> Duplikat slot ini ke hari lain (Belum Live)</p>
-        <div className="flex flex-wrap items-center gap-2">
-          <input type="date" value={dupTo} onChange={(e) => setDupTo(e.target.value)} className="rounded-xl border px-3 py-2 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} />
-          <button onClick={() => setDupTo(iso(addDays(parseISO(f.date), 1)))} className="rounded-lg border px-2.5 py-2 text-xs font-semibold" style={{ borderColor: "#EEF0F4", color: PURPLE }}>Esok</button>
-          <button onClick={() => setDupTo(iso(addDays(parseISO(f.date), 7)))} className="rounded-lg border px-2.5 py-2 text-xs font-semibold" style={{ borderColor: "#EEF0F4", color: PURPLE }}>+7 hari</button>
-          <button onClick={() => { if (!brand) { flash("Pilih brand."); return; } if (!dupTo) { flash("Pilih tarikh."); return; } const r = rateForDate(brand, dupTo); onDuplicate({ date: dupTo, brandId: brand.id, brand: brand.name, start: f.start, end: f.end, hours, rate: r, commission: 0, sales: 0, kpi: f.kpi, note: f.note, income: hours * r, status: "Belum Live" }); }} className="rounded-xl px-3.5 py-2 text-sm font-bold text-white" style={{ background: PURPLE }}>Duplikat</button>
-        </div>
-      </div>
-
       <div className="mt-4 flex items-center gap-3">
         {editing && <button onClick={() => onDelete(f.id)} className="inline-flex items-center gap-1.5 rounded-xl border px-3 py-2.5 text-sm font-semibold" style={{ borderColor: "#FECACA", color: "#DC2626" }}><Trash2 size={15} /> Padam</button>}
         <div className="ml-auto flex gap-3"><button onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Cancel</button><button onClick={save} className="inline-flex items-center justify-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)", boxShadow: "0 8px 18px rgba(109,40,217,0.28)" }}><CheckCircle2 size={15} /> Save Report</button></div>
@@ -1832,4 +1822,3 @@ function Tetapan({ ctx }) {
     </>
   );
 }
- 
