@@ -43,6 +43,7 @@ function getMonday(d) { const x = new Date(d); const day = x.getDay(); x.setDate
 function fmtTime(hhmm) { let [h, m] = hhmm.split(":").map(Number); const ap = h >= 12 ? "PM" : "AM"; let hr = h % 12 || 12; return `${hr}:${String(m).padStart(2, "0")} ${ap}`; }
 function fmtTimeShort(hhmm) { let [h, m] = hhmm.split(":").map(Number); const ap = h >= 12 ? "p" : "a"; let hr = h % 12 || 12; return m ? `${hr}.${String(m).padStart(2, "0")}${ap}` : `${hr}${ap}`; }
 function RM(n) { return `RM${Number(n).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+function H(n) { return parseFloat((Math.round((Number(n) || 0) * 100) / 100).toFixed(2)); }
 function pad(n) { return String(n).padStart(2, "0"); }
 function durHours(s, e) { const a = s.split(":").map(Number), b = e.split(":").map(Number); return Math.max(0, (b[0] * 60 + b[1] - (a[0] * 60 + a[1])) / 60); }
 function brandSlug(b) { return ((b || "SESI").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 4)) || "SESI"; }
@@ -141,6 +142,52 @@ function buildSeedClaims(sessions, brands) {
   });
 }
 
+/* ---------- DEMO DATA (relatif kepada hari ini, penuh untuk tunjuk client) ---------- */
+function buildDemoData() {
+  const monthFirst = iso(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1));
+  const brands = [
+    { id: "d1", name: "Glow Beauty Sdn Bhd", weekStart: 1, color: "#8B5CF6", phone: "+60 3-7788 1122", address: "No. 12, Jalan PJU 5/1, Kota Damansara, 47810 PJ, Selangor", logo: "", rates: [{ from: "2000-01-01", rate: 40 }, { from: monthFirst, rate: 45 }], rate: 45, commission: { type: "percent", percent: 10 } },
+    { id: "d2", name: "Aura Cosmetics", weekStart: 1, color: "#F472B6", phone: "+60 3-5566 7788", address: "Lot 8, Jalan SS2/24, 47300 PJ, Selangor", logo: "", rates: [{ from: "2000-01-01", rate: 45 }], rate: 45, commission: { type: "kpi", threshold: 800, percent: 20 } },
+    { id: "d3", name: "Luxe Skincare", weekStart: 3, color: "#FBBF24", phone: "+60 3-2201 9090", address: "Suite 22-3, Menara Luxe, Jalan Ampang, 50450 KL", logo: "", rates: [{ from: "2000-01-01", rate: 50 }], rate: 50, commission: { type: "tiered", tiers: [{ min: 1000, percent: 5 }, { min: 2000, percent: 7 }] } },
+    { id: "d4", name: "Bloom Care", weekStart: 1, color: "#34D399", phone: "+60 6-7654 3210", address: "No. 5, Jalan Seremban 2, 70300 Seremban, N9", logo: "", rates: [{ from: "2000-01-01", rate: 35 }], rate: 35, commission: { type: "manual" } },
+  ];
+  const slots = []; let id = 1;
+  const tmpl = [[10, 2, 0, 1100], [14, 2, 1, 950], [20, 3, 2, 1900], [16, 2, 3, 600]];
+  for (let off = 28; off >= 1; off--) {
+    const d = addDays(TODAY, -off); if (d.getDay() === 0) continue;
+    const ds = iso(d); const n = off % 3 === 0 ? 3 : off % 2 === 0 ? 2 : 1;
+    for (let k = 0; k < n; k++) {
+      const [sh, hrs, bi, sb] = tmpl[k % tmpl.length]; const b = brands[bi];
+      const sales = sb + ((off * 37) % 700); const rate = rateForDate(b, ds);
+      const comm = computeCommission(b, sales); const commission = comm != null ? Math.round(comm) : Math.round(sales * 0.05);
+      slots.push({ id: "s" + (id++), date: ds, brandId: b.id, brand: b.name, start: pad(sh) + ":00", end: pad(sh + hrs) + ":00", hours: hrs, rate, commission, sales, kpi: sales > 800, note: "", income: hrs * rate + commission, status: "Selesai" });
+    }
+  }
+  [[1, 10, 2, 0], [1, 20, 3, 2], [2, 14, 2, 1], [3, 20, 3, 2]].forEach(([off, sh, hrs, bi], i) => {
+    const d = addDays(TODAY, off); const ds = iso(d); const b = brands[bi]; const rate = rateForDate(b, ds);
+    slots.push({ id: "sp" + i, date: ds, brandId: b.id, brand: b.name, start: pad(sh) + ":00", end: pad(sh + hrs) + ":00", hours: hrs, rate, commission: 0, sales: 0, kpi: false, note: "", income: hrs * rate, status: "Belum Live" });
+  });
+  const claims = buildDemoClaims(slots, brands);
+  const settings = { ...DEFAULT_SETTINGS, hostName: "Nur Aisyah" };
+  return { brands, sessions: slots, claims, settings };
+}
+function buildDemoClaims(sessions, brands) {
+  const bById = Object.fromEntries(brands.map((b) => [b.id, b]));
+  const groups = {}; const todayStr = iso(TODAY);
+  sessions.filter(isDone).forEach((s) => {
+    const b = bById[s.brandId]; if (!b) return;
+    const cs = cycleStart(s.date, b.weekStart), ce = iso(addDays(parseISO(cs), 6));
+    if (ce >= todayStr) return; // biar kitaran semasa belum dibil (untuk demo Claim)
+    const k = s.brandId + "|" + cs;
+    (groups[k] ||= { brandId: s.brandId, brand: b.name, color: b.color, start: cs, end: ce, list: [] }).list.push(s);
+  });
+  const paidCutoff = iso(addDays(TODAY, -10));
+  return Object.values(groups).map((g, i) => {
+    const agg = aggregateOf(g.list); const paid = g.end < paidCutoff;
+    return { id: "dc" + i, brandId: g.brandId, brand: g.brand, color: g.color, start: g.start, end: g.end, invoiceNo: `INV-${g.start.replace(/-/g, "")}-${brandSlug(g.brand)}`, sessionIds: g.list.map((s) => s.id), ...agg, paid, paidDate: paid ? iso(addDays(parseISO(g.end), 2)) : null, ref: paid ? `TRX-${brandSlug(g.brand)}-${g.start.slice(5, 7)}${g.start.slice(8, 10)}` : null };
+  });
+}
+
 /* ---------- PRIMITIVES ---------- */
 function Pill({ tone, children }) {
   const map = { green: { bg: "#DCFCE7", fg: "#15803D" }, amber: { bg: "#FEF3C7", fg: "#B45309" }, gray: { bg: "#F1F5F9", fg: "#64748B" }, purple: { bg: "#EDE9FE", fg: "#6D28D9" }, red: { bg: "#FEE2E2", fg: "#DC2626" }, blue: { bg: "#DBEAFE", fg: "#1D4ED8" } };
@@ -226,7 +273,7 @@ function prettyAuthErr(e) {
   if (c.includes("network")) return "Masalah rangkaian. Cuba lagi.";
   return "Ralat: " + ((e && e.message) || c || "cuba lagi");
 }
-function AuthScreen({ onLogin, onRegister }) {
+function AuthScreen({ onLogin, onRegister, onDemo }) {
   const [mode, setMode] = useState("login");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -262,6 +309,12 @@ function AuthScreen({ onLogin, onRegister }) {
           {mode === "login" ? "Belum ada akaun? " : "Dah ada akaun? "}
           <button onClick={() => { setMode(mode === "login" ? "register" : "login"); setErr(""); }} className="font-bold" style={{ color: PURPLE }}>{mode === "login" ? "Daftar di sini" : "Log Masuk"}</button>
         </p>
+        {onDemo && (
+          <div className="mt-5 border-t pt-4" style={{ borderColor: "#F1F0F6" }}>
+            <button onClick={onDemo} className="flex w-full items-center justify-center gap-2 rounded-xl border py-3 text-sm font-bold transition-colors" style={{ borderColor: "#E4E0F5", color: PURPLE, background: LAV }}>👁️ Lihat Demo (Data Penuh)</button>
+            <p className="mt-1.5 text-center text-[11px]" style={{ color: SUB }}>Tiada login diperlukan · sesuai untuk tunjuk client</p>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -304,6 +357,40 @@ function PendingScreen({ email, onLogout }) {
         <button onClick={onLogout} className="mt-5 inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: PURPLE }}><LogOut size={15} /> Log Keluar</button>
       </div>
     </div>
+  );
+}
+function Tutorial({ onDone, setPage }) {
+  const steps = [
+    { icon: Activity, title: "Selamat datang ke HostIncome 👋", body: "Aplikasi untuk rekod sesi live, kira pendapatan & komisen, dan jana invois untuk setiap brand. Jom lihat 4 langkah asas." },
+    { icon: Store, title: "1. Daftar Brand", body: "Pergi ke halaman Brand. Daftar company dengan rate per jam (boleh ikut tarikh) dan struktur komisen (peratus / selepas KPI / berperingkat / manual)." },
+    { icon: CalendarRange, title: "2. Isi Jadual", body: "Di halaman Jadual, klik hari untuk tambah slot live. Isi masa, sales & komisen. Tandakan Selesai bila dah siap buat live. Boleh salin slot ke hari lain." },
+    { icon: ReceiptText, title: "3. Buat Claim", body: "Di halaman Claim, pilih brand + julat tarikh. Sistem auto-kira jumlah (slot Selesai sahaja) dan jana invois rasmi." },
+    { icon: FileText, title: "4. Invois & Bayaran", body: "Di halaman Invoice, buka invois, muat turun PDF atau hantar WhatsApp, dan tandakan bila dah dibayar. Siap!" },
+  ];
+  const [i, setI] = useState(0);
+  const S = steps[i]; const Icon = S.icon; const last = i === steps.length - 1;
+  return (
+    <Modal onClose={onDone}>
+      <div className="text-center">
+        <span className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl" style={{ background: LAV }}><Icon size={26} style={{ color: PURPLE }} /></span>
+        <h3 className="mt-4 text-lg font-bold">{S.title}</h3>
+        <p className="mt-2 text-sm" style={{ color: "#475569" }}>{S.body}</p>
+      </div>
+      <div className="mt-5 flex items-center justify-center gap-1.5">
+        {steps.map((_, idx) => <span key={idx} className="h-1.5 rounded-full transition-all" style={{ width: idx === i ? 20 : 6, background: idx === i ? PURPLE : "#E4E0F5" }} />)}
+      </div>
+      <div className="mt-5 flex items-center justify-between gap-2">
+        <button onClick={onDone} className="text-sm font-semibold" style={{ color: SUB }}>Langkau</button>
+        <div className="flex gap-2">
+          {i > 0 && <button onClick={() => setI(i - 1)} className="rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Kembali</button>}
+          {!last ? (
+            <button onClick={() => setI(i + 1)} className="rounded-xl px-5 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}>Seterusnya</button>
+          ) : (
+            <button onClick={() => { onDone(); setPage("brand"); }} className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><CheckCircle2 size={15} /> Mula Guna</button>
+          )}
+        </div>
+      </div>
+    </Modal>
   );
 }
 function AdminPage({ ctx }) {
@@ -405,6 +492,7 @@ export default function HostIncome() {
   const [authUser, setAuthUser] = useState(null);   // { uid, email, name }
   const [profile, setProfile] = useState(null);      // { name, email, role, status, createdAt }
   const [users, setUsers] = useState([]);            // admin: semua pengguna
+  const [demo, setDemo] = useState(false);
   const fb = useRef(null);
   const [toast, setToast] = useState(null);
   function flash(msg) { setToast(msg); setTimeout(() => setToast(null), 2600); }
@@ -536,7 +624,7 @@ export default function HostIncome() {
 
   function upsertSession(s) {
     if (cloud && fb.current) {
-      const id = s.id ?? "s" + Date.now();
+      const id = s.id ?? ("s" + Date.now() + Math.floor(Math.random() * 100000));
       fb.current.set(fb.current.path(`sessions/${id}`), { ...s, id });
       return;
     }
@@ -601,27 +689,41 @@ export default function HostIncome() {
     if (cloud && fb.current) fb.current.set(fb.current.path("settings"), s);
     setSettings(s); flash("Tetapan disimpan.");
   }
+  function enterDemo() {
+    const d = buildDemoData();
+    setBrands(d.brands); setSessions(d.sessions); setClaims(d.claims); setSettings(d.settings);
+    setCloud(false); setDemo(true); setPage("dashboard");
+  }
+  function exitDemo() {
+    setDemo(false); setBrands([]); setSessions([]); setClaims([]); setSettings({ ...DEFAULT_SETTINGS }); setPage("dashboard");
+  }
+  function markTutorialSeen() {
+    if (cloud && fb.current) fb.current.update(fb.current.path("settings"), { tutorialSeen: true });
+    setSettings((s) => ({ ...s, tutorialSeen: true }));
+  }
 
   const NAV = [
     { id: "dashboard", label: "Dashboard", Icon: Home },
     { id: "jadual", label: "Jadual Mingguan", Icon: CalendarRange },
     { id: "claim", label: "Claim / Bil", Icon: ReceiptText },
     { id: "brand", label: "Brand", Icon: Store },
-    { id: "bulanan", label: "Bulanan", Icon: BarChart3 },
+    { id: "bulanan", label: "Analitik", Icon: BarChart3 },
     { id: "invoice", label: "Invoice", Icon: FileText },
     { id: "pembayaran", label: "Pembayaran", Icon: Wallet },
     { id: "tetapan", label: "Tetapan", Icon: SettingsIcon },
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setPage, flash, isAdmin, authUser, profile, users, login, register, logout, setUserRole, setUserStatus, deleteUserRecord, resendVerification, reloadUser };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, deleteUserRecord, resendVerification, reloadUser };
 
-  if (USE_FB && !authReady) return <FullLoader text="Memuatkan…" />;
-  if (USE_FB && !authUser) return <AuthScreen onLogin={login} onRegister={register} />;
-  if (USE_FB && authUser && !profile) return <FullLoader text="Menyediakan akaun…" />;
-  if (USE_FB && authUser && !authUser.emailVerified && !isAdmin) return <VerifyEmailScreen email={authUser.email} onResend={resendVerification} onReload={reloadUser} onLogout={logout} />;
-  if (USE_FB && profile && profile.status === "suspended") return <SuspendedScreen onLogout={logout} email={authUser.email} />;
-  if (USE_FB && profile && profile.status === "pending") return <PendingScreen onLogout={logout} email={authUser.email} />;
-  if (loading) return <FullLoader text="Menyambung ke data…" />;
+  if (USE_FB && !demo) {
+    if (!authReady) return <FullLoader text="Memuatkan…" />;
+    if (!authUser) return <AuthScreen onLogin={login} onRegister={register} onDemo={enterDemo} />;
+    if (authUser && !profile) return <FullLoader text="Menyediakan akaun…" />;
+    if (authUser && !authUser.emailVerified && !isAdmin) return <VerifyEmailScreen email={authUser.email} onResend={resendVerification} onReload={reloadUser} onLogout={logout} />;
+    if (profile && profile.status === "suspended") return <SuspendedScreen onLogout={logout} email={authUser.email} />;
+    if (profile && profile.status === "pending") return <PendingScreen onLogout={logout} email={authUser.email} />;
+    if (loading) return <FullLoader text="Menyambung ke data…" />;
+  }
 
   return (
     <div style={{ background: "#F8FAFC", minHeight: "100vh", fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif", color: INK }}>
@@ -640,6 +742,12 @@ export default function HostIncome() {
         input,select,button{font-family:inherit}
       `}</style>
 
+      {demo && (
+        <div className="no-print flex items-center justify-between px-4 py-2 text-xs font-bold text-white" style={{ background: "linear-gradient(90deg,#F59E0B,#EA580C)" }}>
+          <span>👁️ MOD DEMO — data contoh sahaja, tidak disimpan.</span>
+          <button onClick={exitDemo} className="rounded-lg bg-white/25 px-2.5 py-1 font-bold">Log Masuk / Keluar Demo</button>
+        </div>
+      )}
       <div className="no-print sticky top-0 z-40 flex items-center justify-between border-b bg-white/80 px-4 py-3 backdrop-blur lg:hidden" style={{ borderColor: "#EEF0F4" }}>
         <Brand /><button onClick={() => setMobileOpen(true)} className="rounded-xl border p-2" style={{ borderColor: "#EEF0F4" }}><Menu size={20} style={{ color: PURPLE }} /></button>
       </div>
@@ -683,6 +791,8 @@ export default function HostIncome() {
           );
         })}
       </nav>
+
+      {USE_FB && !demo && profile && profile.status === "active" && !loading && !settings.tutorialSeen && <Tutorial onDone={markTutorialSeen} setPage={setPage} />}
     </div>
   );
 }
@@ -732,7 +842,7 @@ function Sidebar({ NAV, page, setPage, settings, data, ctx }) {
       <div className="mt-auto rounded-2xl p-4" style={{ background: LAV }}>
         <p className="text-xs font-bold" style={{ color: PURPLE }}>Ringkasan Bulanan</p><p className="text-[11px]" style={{ color: SUB }}>{data.monthLabel}</p>
         <p className="mt-3 text-[11px] font-medium" style={{ color: SUB }}>Jumlah Pendapatan</p><p className="text-xl font-extrabold" style={{ color: INK }}>{RM(data.monthIncome)}</p>
-        <div className="mt-3 flex justify-between border-t pt-3" style={{ borderColor: "#E4E0F5" }}><div><p className="text-[10px]" style={{ color: SUB }}>Jam</p><p className="text-sm font-bold">{data.monthHours} jam</p></div><div><p className="text-[10px]" style={{ color: SUB }}>Sesi</p><p className="text-sm font-bold">{data.monthSessions} sesi</p></div></div>
+        <div className="mt-3 flex justify-between border-t pt-3" style={{ borderColor: "#E4E0F5" }}><div><p className="text-[10px]" style={{ color: SUB }}>Jam</p><p className="text-sm font-bold">{H(data.monthHours)} jam</p></div><div><p className="text-[10px]" style={{ color: SUB }}>Sesi</p><p className="text-sm font-bold">{data.monthSessions} sesi</p></div></div>
       </div>
       {ctx?.profile && <button onClick={ctx.logout} className="mt-3 flex items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-semibold transition-colors" style={{ borderColor: "#EEF0F4", color: "#DC2626" }}><LogOut size={15} /> Log Keluar</button>}
     </>
@@ -823,7 +933,7 @@ function Dashboard({ ctx }) {
             <div className="flex flex-col gap-2">
               {data.today.map((s) => (
                 <div key={s.id} className="flex items-center justify-between gap-3 rounded-xl border p-2.5" style={{ borderColor: "#F1F0F6", background: isDone(s) ? "#FCFBFE" : "#FFFDF5" }}>
-                  <div className="flex min-w-0 items-center gap-2.5"><Dot color={data.bById[s.brandId]?.color || PURPLE} /><div className="min-w-0"><p className="truncate text-sm font-bold">{s.brand}</p><p className="text-xs" style={{ color: SUB }}>{fmtTime(s.start)}–{fmtTime(s.end)} · {s.hours}j</p></div></div>
+                  <div className="flex min-w-0 items-center gap-2.5"><Dot color={data.bById[s.brandId]?.color || PURPLE} /><div className="min-w-0"><p className="truncate text-sm font-bold">{s.brand}</p><p className="text-xs" style={{ color: SUB }}>{fmtTime(s.start)}–{fmtTime(s.end)} · {H(s.hours)}j</p></div></div>
                   <div className="flex shrink-0 items-center gap-2"><span className="text-sm font-extrabold" style={{ color: PURPLE }}>{isDone(s) ? RM(s.income) : "—"}</span><Pill tone={isDone(s) ? "green" : "amber"}>{s.status}</Pill></div>
                 </div>
               ))}
@@ -853,6 +963,7 @@ function JadualMingguan({ ctx }) {
   const [cursor, setCursor] = useState(() => new Date(TODAY));
   const [modal, setModal] = useState(null);    // add/edit slot
   const [dayView, setDayView] = useState(null); // popup senarai slot 1 hari
+  const [copyTo, setCopyTo] = useState("");
 
   const compact = mode !== "week";
   const monthIdx = cursor.getMonth();
@@ -882,6 +993,21 @@ function JadualMingguan({ ctx }) {
     const startH = lastS ? parseInt(lastS.end) : 10;
     setDayView(null);
     setModal({ date, session: null, start: `${pad(Math.min(22, startH))}:00`, end: `${pad(Math.min(23, startH + 2))}:00` });
+  }
+  function copyDayTo(srcDate, tgtDate) {
+    if (!tgtDate) { flash("Pilih tarikh sasaran dahulu."); return; }
+    if (tgtDate === srcDate) { flash("Tarikh sama — pilih hari lain."); return; }
+    const srcList = sessions.filter((s) => s.date === srcDate);
+    if (srcList.length === 0) { flash("Tiada slot untuk disalin."); return; }
+    const existing = sessions.filter((s) => s.date === tgtDate).length;
+    let added = 0;
+    srcList.forEach((s, idx) => {
+      if (existing + added >= maxSlots) return;
+      const b = brands.find((x) => x.id === s.brandId); const r = rateForDate(b, tgtDate);
+      upsertSession({ id: "s" + Date.now() + "_" + idx, date: tgtDate, brandId: s.brandId, brand: s.brand, start: s.start, end: s.end, hours: s.hours, rate: r, commission: 0, sales: 0, kpi: s.kpi, note: s.note, income: s.hours * r, status: "Belum Live" });
+      added++;
+    });
+    flash(`${added} slot disalin ke ${fmtDateShort(tgtDate)}.`); setCopyTo(""); setDayView(null);
   }
 
   const Seg = ({ id, t }) => (
@@ -987,7 +1113,7 @@ function JadualMingguan({ ctx }) {
         return (
           <Modal onClose={() => setDayView(null)} wide>
             <div className="flex items-center justify-between">
-              <div><h3 className="text-base font-bold">{fmtDate(dayView)}</h3><p className="text-xs" style={{ color: SUB }}>{day.doneCount} selesai · {day.plannedCount} belum live · {day.hours}j</p></div>
+              <div><h3 className="text-base font-bold">{fmtDate(dayView)}</h3><p className="text-xs" style={{ color: SUB }}>{day.doneCount} selesai · {day.plannedCount} belum live · {H(day.hours)}j</p></div>
               <button onClick={() => setDayView(null)} className="rounded-lg p-1.5" style={{ color: SUB }}><X size={18} /></button>
             </div>
             <div className="mt-4 flex flex-col gap-2">
@@ -996,13 +1122,24 @@ function JadualMingguan({ ctx }) {
                 const locked = data.lockedSessionIds.has(s.id); const col = data.bById[s.brandId]?.color || PURPLE;
                 return (
                   <button key={s.id} onClick={() => openEdit(s)} className="flex items-center justify-between gap-3 rounded-xl border p-3 pl-3.5 text-left transition-all hover:shadow-sm" style={{ borderColor: isDone(s) ? "#BBF7D0" : "#FDE68A", borderLeft: `4px solid ${isDone(s) ? "#16A34A" : "#F59E0B"}`, background: isDone(s) ? "#F0FDF4" : "#FFFBEB" }}>
-                    <div className="flex min-w-0 items-center gap-2.5"><Dot color={col} /><div className="min-w-0"><p className="truncate text-sm font-bold">{s.brand}{locked && <Lock size={11} className="ml-1 inline" style={{ color: SUB }} />}</p><p className="text-xs" style={{ color: "#475569" }}>{fmtTime(s.start)} – {fmtTime(s.end)} · {s.hours}j</p></div></div>
+                    <div className="flex min-w-0 items-center gap-2.5"><Dot color={col} /><div className="min-w-0"><p className="truncate text-sm font-bold">{s.brand}{locked && <Lock size={11} className="ml-1 inline" style={{ color: SUB }} />}</p><p className="text-xs" style={{ color: "#475569" }}>{fmtTime(s.start)} – {fmtTime(s.end)} · {H(s.hours)}j</p></div></div>
                     <div className="flex shrink-0 items-center gap-2"><span className="text-sm font-extrabold" style={{ color: isDone(s) ? "#15803D" : "#B45309" }}>{isDone(s) ? RM(s.income) : "—"}</span>{isDone(s) ? <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: "#DCFCE7", color: "#15803D" }}><CheckCircle2 size={12} />Selesai</span> : <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold" style={{ background: "#FEF3C7", color: "#B45309" }}><span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: "#F59E0B" }} />Belum Live</span>}</div>
                   </button>
                 );
               })}
               <div className="mt-1 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: LAV }}><span className="text-sm font-bold">Total Earning (Selesai)</span><span className="text-base font-extrabold" style={{ color: PURPLE }}>{RM(day.income)}</span></div>
             </div>
+            {list.length > 0 && (
+              <div className="mt-3 rounded-xl border p-3" style={{ borderColor: "#EEF0F4" }}>
+                <p className="mb-2 flex items-center gap-1.5 text-xs font-bold" style={{ color: SUB }}><Plus size={13} style={{ color: PURPLE }} /> Salin semua slot hari ini ke hari lain</p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input type="date" value={copyTo} onChange={(e) => setCopyTo(e.target.value)} className="rounded-xl border px-3 py-2 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} />
+                  <button onClick={() => copyDayTo(dayView, copyTo)} className="rounded-xl px-3.5 py-2 text-sm font-bold text-white" style={{ background: PURPLE }}>Salin</button>
+                  <button onClick={() => copyDayTo(dayView, iso(addDays(parseISO(dayView), 7)))} className="rounded-xl border px-3 py-2 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: PURPLE }}>→ Minggu depan</button>
+                </div>
+                <p className="mt-1.5 text-[11px]" style={{ color: SUB }}>Brand & masa disalin sebagai "Belum Live" (sales/komisen kosong).</p>
+              </div>
+            )}
             {!atMax && <button onClick={() => openAdd(dayView)} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)", boxShadow: "0 8px 18px rgba(109,40,217,0.28)" }}><Plus size={16} /> Tambah Slot</button>}
           </Modal>
         );
@@ -1063,7 +1200,7 @@ function SlotModal({ init, brands, settings, onClose, onSave, onDelete, flash })
         <div className="sm:col-span-2"><Field label="Nota (pilihan)"><Input value={f.note} placeholder="Contoh: Live promosi produk baru" onChange={(v) => setF({ ...f, note: v })} /></Field></div>
       </div>
       <div className="mt-5 grid grid-cols-3 gap-3 rounded-xl p-4" style={{ background: LAV }}>
-        <div><p className="text-xs" style={{ color: SUB }}>Tempoh</p><p className="text-sm font-bold">{hours.toFixed(1)} jam</p></div>
+        <div><p className="text-xs" style={{ color: SUB }}>Tempoh</p><p className="text-sm font-bold">{H(hours)} jam</p></div>
         <div><p className="text-xs" style={{ color: SUB }}>Pendapatan Jam</p><p className="text-sm font-bold">{RM(hourly)}</p></div>
         <div><p className="text-xs" style={{ color: SUB }}>Total Income</p><p className="text-sm font-extrabold" style={{ color: PURPLE }}>{RM(total)}</p></div>
       </div>
@@ -1302,31 +1439,112 @@ function BrandPage({ ctx }) {
   );
 }
 
-/* ============================================================ 5. BULANAN */
+/* ============================================================ 5. ANALITIK (filter) */
 function Bulanan({ ctx }) {
-  const { data, sessions } = ctx;
-  const monthSessions = sessions.filter((s) => isDone(s) && parseISO(s.date).getMonth() === TODAY.getMonth());
-  const activeDays = new Set(monthSessions.map((s) => s.date)).size;
+  const { sessions, data } = ctx;
+  const brands = ctx.brands;
+  const [preset, setPreset] = useState("30d");
+  const [fromD, setFromD] = useState(iso(addDays(TODAY, -29)));
+  const [toD, setToD] = useState(data.todayStr);
+  const [brandF, setBrandF] = useState("all");
+
+  let from, to = data.todayStr;
+  if (preset === "7d") from = iso(addDays(TODAY, -6));
+  else if (preset === "30d") from = iso(addDays(TODAY, -29));
+  else if (preset === "month") { from = iso(new Date(TODAY.getFullYear(), TODAY.getMonth(), 1)); to = iso(new Date(TODAY.getFullYear(), TODAY.getMonth() + 1, 0)); }
+  else if (preset === "3m") from = iso(addDays(TODAY, -89));
+  else if (preset === "year") { from = iso(new Date(TODAY.getFullYear(), 0, 1)); }
+  else if (preset === "all") from = "2000-01-01";
+  else { from = fromD || "2000-01-01"; to = toD || data.todayStr; }
+
+  const inRange = sessions.filter((s) => isDone(s) && s.date >= from && s.date <= to && (brandF === "all" || s.brandId === brandF));
+  const income = inRange.reduce((a, s) => a + s.income, 0);
+  const hours = inRange.reduce((a, s) => a + s.hours, 0);
+  const commission = inRange.reduce((a, s) => a + s.commission, 0);
+  const hourly = inRange.reduce((a, s) => a + s.hours * s.rate, 0);
+  const activeDays = new Set(inRange.map((s) => s.date)).size;
+
+  const spanDays = Math.round((parseISO(to) - parseISO(from)) / 86400000);
+  const byWeek = spanDays > 45;
   const buckets = {};
-  monthSessions.forEach((s) => { const k = iso(getMonday(parseISO(s.date))); (buckets[k] ||= { hours: 0, income: 0, commission: 0, sessions: 0 }); const b = buckets[k]; b.hours += s.hours; b.income += s.income; b.commission += s.commission; b.sessions++; });
-  const weeks = Object.keys(buckets).sort().map((k, i) => ({ name: `M${i + 1}`, Pendapatan: buckets[k].income, Komisen: buckets[k].commission, Sesi: buckets[k].sessions, Jam: buckets[k].hours }));
+  inRange.forEach((s) => { const key = byWeek ? iso(getMonday(parseISO(s.date))) : s.date; (buckets[key] ||= { income: 0, comm: 0 }); buckets[key].income += s.income; buckets[key].comm += s.commission; });
+  const series = Object.keys(buckets).sort().map((k) => ({ name: fmtDateShort(k), Pendapatan: Math.round(buckets[k].income), Komisen: Math.round(buckets[k].comm) }));
+
+  const byBrand = {};
+  inRange.forEach((s) => { const b = (byBrand[s.brandId] ||= { name: s.brand, income: 0, sessions: 0, hours: 0, color: data.bById[s.brandId]?.color || PURPLE }); b.income += s.income; b.sessions++; b.hours += s.hours; });
+  const brandArr = Object.values(byBrand).sort((a, b) => b.income - a.income);
+
+  const presets = [["7d", "7 Hari"], ["30d", "30 Hari"], ["month", "Bulan Ini"], ["3m", "3 Bulan"], ["year", "Tahun Ini"], ["all", "Semua"], ["custom", "Pilih Tarikh"]];
+
   return (
     <>
-      <PageHead title="Laporan Bulanan" subtitle={data.monthLabel} />
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <StatCard theme="purple" Icon={ListChecks} label="Total Sessions" value={`${data.monthSessions}`} sub="sesi live" />
-        <StatCard theme="blue" Icon={Clock} label="Total Hours" value={`${data.monthHours}`} sub="jam" />
-        <StatCard theme="green" Icon={Wallet} label="Hourly Income" value={RM(data.monthHourly)} sub="pendapatan jam" />
-        <StatCard theme="pink" Icon={Coins} label="Total Commission" value={RM(data.monthCommission)} sub="komisen" />
-      </div>
-      <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Metric label="Total Income" value={RM(data.monthIncome)} /><Metric label="Avg Hours / Day" value={`${(data.monthHours / Math.max(1, activeDays)).toFixed(1)} jam`} /><Metric label="Avg Income / Day" value={RM(data.monthIncome / Math.max(1, activeDays))} /><Metric label="Hari Aktif" value={`${activeDays} hari`} />
-      </div>
-      <div className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Panel title="Income Trend"><ResponsiveContainer width="100%" height={240}><AreaChart data={weeks} margin={{ left: -18, right: 6 }}><defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={PURPLE_LT} stopOpacity={0.35} /><stop offset="100%" stopColor={PURPLE_LT} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#F1F0F6" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 12, fill: SUB }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 12, fill: SUB }} axisLine={false} tickLine={false} /><Tooltip formatter={(v) => RM(v)} /><Area type="monotone" dataKey="Pendapatan" stroke={PURPLE} strokeWidth={2.5} fill="url(#g1)" /></AreaChart></ResponsiveContainer></Panel>
-        <Panel title="Weekly Income"><ResponsiveContainer width="100%" height={240}><BarChart data={weeks} margin={{ left: -18, right: 6 }}><CartesianGrid strokeDasharray="3 3" stroke="#F1F0F6" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 12, fill: SUB }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 12, fill: SUB }} axisLine={false} tickLine={false} /><Tooltip formatter={(v) => RM(v)} /><Bar dataKey="Pendapatan" radius={[8, 8, 0, 0]} fill={PURPLE_LT} barSize={34} /><Bar dataKey="Komisen" radius={[8, 8, 0, 0]} fill="#F472B6" barSize={34} /></BarChart></ResponsiveContainer></Panel>
-        <Panel title="Sessions Count"><ResponsiveContainer width="100%" height={220}><BarChart data={weeks} margin={{ left: -18, right: 6 }}><CartesianGrid strokeDasharray="3 3" stroke="#F1F0F6" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 12, fill: SUB }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 12, fill: SUB }} axisLine={false} tickLine={false} /><Tooltip /><Bar dataKey="Sesi" radius={[8, 8, 0, 0]} fill="#22C55E" barSize={34} /></BarChart></ResponsiveContainer></Panel>
-        <Panel title="Hours Count"><ResponsiveContainer width="100%" height={220}><LineChart data={weeks} margin={{ left: -18, right: 6 }}><CartesianGrid strokeDasharray="3 3" stroke="#F1F0F6" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 12, fill: SUB }} axisLine={false} tickLine={false} /><YAxis tick={{ fontSize: 12, fill: SUB }} axisLine={false} tickLine={false} /><Tooltip /><Line type="monotone" dataKey="Jam" stroke="#2563EB" strokeWidth={2.5} dot={{ r: 4, fill: "#2563EB" }} /></LineChart></ResponsiveContainer></Panel>
+      <PageHead title="Analitik" subtitle="Prestasi & pendapatan — tapis ikut tarikh & brand." />
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[250px_1fr]">
+        {/* FILTER PANEL */}
+        <div className="lg:sticky lg:top-6 lg:self-start">
+          <Panel title="Penapis">
+            <p className="mb-2 text-xs font-bold" style={{ color: SUB }}>Tempoh</p>
+            <div className="grid grid-cols-2 gap-1.5">
+              {presets.map(([id, t]) => (
+                <button key={id} onClick={() => setPreset(id)} className="rounded-lg px-2 py-2 text-xs font-bold transition-colors" style={preset === id ? { background: PURPLE, color: "#fff" } : { background: "#F1F0F6", color: "#475569" }}>{t}</button>
+              ))}
+            </div>
+            {preset === "custom" && (
+              <div className="mt-3 flex flex-col gap-2">
+                <Field label="Dari"><Input type="date" value={fromD} onChange={setFromD} /></Field>
+                <Field label="Hingga"><Input type="date" value={toD} onChange={setToD} /></Field>
+              </div>
+            )}
+            <div className="mt-4"><p className="mb-2 text-xs font-bold" style={{ color: SUB }}>Brand</p>
+              <Select value={brandF} onChange={setBrandF}><option value="all">Semua Brand</option>{brands.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}</Select>
+            </div>
+            <div className="mt-4 rounded-xl p-3" style={{ background: LAV }}>
+              <p className="text-[11px] font-semibold" style={{ color: SUB }}>Julat dipilih</p>
+              <p className="text-xs font-bold">{fmtDateShort(from)} – {fmtDateShort(to)}</p>
+              <p className="mt-1 text-[11px]" style={{ color: SUB }}>{inRange.length} sesi · {activeDays} hari aktif</p>
+            </div>
+          </Panel>
+        </div>
+
+        {/* CONTENT */}
+        <div className="flex flex-col gap-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <StatCard theme="purple" Icon={Wallet} label="Pendapatan" value={RM(income)} sub={`${inRange.length} sesi`} />
+            <StatCard theme="blue" Icon={Clock} label="Jam" value={`${H(hours)}`} sub="jam" />
+            <StatCard theme="green" Icon={ListChecks} label="Purata / Hari" value={RM(income / Math.max(1, activeDays))} sub={`${activeDays} hari aktif`} />
+            <StatCard theme="pink" Icon={Coins} label="Komisen" value={RM(commission)} sub={`Rate: ${RM(hourly)}`} />
+          </div>
+
+          <Panel title={byWeek ? "Pendapatan Mingguan" : "Pendapatan Harian"}>
+            {series.length === 0 ? <div className="flex h-52 items-center justify-center text-sm" style={{ color: SUB }}>Tiada data dalam julat ini.</div> : (
+              <ResponsiveContainer width="100%" height={260}><AreaChart data={series} margin={{ left: -18, right: 6 }}><defs><linearGradient id="ga" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={PURPLE_LT} stopOpacity={0.35} /><stop offset="100%" stopColor={PURPLE_LT} stopOpacity={0} /></linearGradient></defs><CartesianGrid strokeDasharray="3 3" stroke="#F1F0F6" vertical={false} /><XAxis dataKey="name" tick={{ fontSize: 11, fill: SUB }} axisLine={false} tickLine={false} interval="preserveStartEnd" /><YAxis tick={{ fontSize: 11, fill: SUB }} axisLine={false} tickLine={false} /><Tooltip formatter={(v) => RM(v)} /><Area type="monotone" dataKey="Pendapatan" stroke={PURPLE} strokeWidth={2.5} fill="url(#ga)" /></AreaChart></ResponsiveContainer>
+            )}
+          </Panel>
+
+          <div className="grid grid-cols-1 gap-5 xl:grid-cols-[1.2fr_1fr]">
+            <Panel title="Pendapatan Ikut Brand">
+              {brandArr.length === 0 ? <p className="py-6 text-center text-sm" style={{ color: SUB }}>Tiada data.</p> : (
+                <div className="flex flex-col gap-3">
+                  {brandArr.map((b, i) => {
+                    const pct = income > 0 ? (b.income / income) * 100 : 0;
+                    return (
+                      <div key={i}>
+                        <div className="mb-1 flex items-center justify-between text-sm"><span className="flex items-center gap-2 font-semibold"><Dot color={b.color} />{b.name}</span><span className="font-bold" style={{ color: PURPLE }}>{RM(b.income)}</span></div>
+                        <div className="h-2 w-full overflow-hidden rounded-full" style={{ background: "#F1F0F6" }}><div className="h-full rounded-full" style={{ width: `${pct}%`, background: b.color }} /></div>
+                        <p className="mt-0.5 text-[11px]" style={{ color: SUB }}>{b.sessions} sesi · {H(b.hours)} jam · {pct.toFixed(0)}%</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </Panel>
+            <Panel title="Agihan Brand">
+              {brandArr.length === 0 ? <div className="flex h-52 items-center justify-center text-sm" style={{ color: SUB }}>Tiada data.</div> : (
+                <div className="flex h-52 items-center justify-center"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={brandArr} dataKey="income" nameKey="name" innerRadius={50} outerRadius={80} paddingAngle={3} stroke="none">{brandArr.map((b, i) => <Cell key={i} fill={b.color} />)}</Pie><Tooltip formatter={(v) => RM(v)} /></PieChart></ResponsiveContainer></div>
+              )}
+            </Panel>
+          </div>
+        </div>
       </div>
     </>
   );
@@ -1480,7 +1698,7 @@ function InvoiceModal({ invId, ctx, onClose }) {
           <div className="order-1 flex flex-col justify-between gap-2 lg:order-2">
             <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>Hourly Income</span><span className="font-semibold">{RM(inv.hourlyIncome)}</span></div>
             <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>Commission</span><span className="font-semibold">{RM(inv.commission)}</span></div>
-            <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>{inv.sessions} sesi - {inv.hours} jam</span><span> </span></div>
+            <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>{inv.sessions} sesi - {H(inv.hours)} jam</span><span> </span></div>
             <div className="mt-1 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><span className="text-sm font-bold text-white">Grand Total</span><span className="text-xl font-extrabold text-white">{RM(inv.total)}</span></div>
           </div>
         </div>
