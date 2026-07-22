@@ -58,11 +58,14 @@ function rateForDate(brand, dateStr) {
   return Number(r) || 0;
 }
 // Kira komisen ikut struktur brand. Pulangkan null jika 'manual' (user isi sendiri).
-function computeCommission(brand, sales) {
+function halfHours(h) { return Math.floor((Number(h) || 0) * 2) / 2; } // bundar ke bawah ke 0.5 jam
+function kpiTargetFor(c, hours) { return halfHours(hours) * (Number(c.perHour) || 0); }
+function computeCommission(brand, sales, hours) {
   const c = brand && brand.commission; const s = Number(sales || 0);
   if (!c || c.type === "manual" || !c.type) return null;
   if (c.type === "percent") return s * (Number(c.percent) || 0) / 100;
   if (c.type === "kpi") { const th = Number(c.threshold) || 0; return s > th ? (s - th) * (Number(c.percent) || 0) / 100 : 0; }
+  if (c.type === "kpi_hourly") { const th = kpiTargetFor(c, hours); return s > th ? (s - th) * (Number(c.percent) || 0) / 100 : 0; }
   if (c.type === "tiered") {
     const tiers = [...(c.tiers || [])].map((t) => ({ min: Number(t.min) || 0, percent: Number(t.percent) || 0 })).sort((a, b) => a.min - b.min);
     let pct = 0; for (const t of tiers) { if (s >= t.min) pct = t.percent; }
@@ -74,6 +77,7 @@ function commissionRuleLabel(c) {
   if (!c || c.type === "manual" || !c.type) return "Manual";
   if (c.type === "percent") return `${c.percent || 0}% × sales`;
   if (c.type === "kpi") return `baki > ${RM(c.threshold || 0)} × ${c.percent || 0}%`;
+  if (c.type === "kpi_hourly") return `KPI ${RM(c.perHour || 0)}/jam × ${c.percent || 0}%`;
   if (c.type === "tiered") return `berperingkat`;
   return "";
 }
@@ -159,7 +163,7 @@ function buildDemoData() {
     for (let k = 0; k < n; k++) {
       const [sh, hrs, bi, sb] = tmpl[k % tmpl.length]; const b = brands[bi];
       const sales = sb + ((off * 37) % 700); const rate = rateForDate(b, ds);
-      const comm = computeCommission(b, sales); const commission = comm != null ? Math.round(comm) : Math.round(sales * 0.05);
+      const comm = computeCommission(b, sales, hrs); const commission = comm != null ? Math.round(comm) : Math.round(sales * 0.05);
       slots.push({ id: "s" + (id++), date: ds, brandId: b.id, brand: b.name, start: pad(sh) + ":00", end: pad(sh + hrs) + ":00", hours: hrs, rate, commission, sales, kpi: sales > 800, note: "", income: hrs * rate + commission, status: "Selesai" });
     }
   }
@@ -1204,7 +1208,7 @@ function SlotModal({ init, brands, settings, onClose, onSave, onDelete, onDuplic
   const brand = brands.find((b) => b.id === f.brandId) || brands[0];
   const rate = rateForDate(brand, f.date);
   const hours = useMemo(() => durHours(f.start, f.end), [f.start, f.end]);
-  const autoComm = computeCommission(brand, f.sales);
+  const autoComm = computeCommission(brand, f.sales, hours);
   const commissionVal = autoComm != null ? autoComm : Number(f.commission || 0);
   const hourly = hours * rate, total = hourly + commissionVal;
 
@@ -1235,7 +1239,7 @@ function SlotModal({ init, brands, settings, onClose, onSave, onDelete, onDuplic
         <Field label="Masa Tamat"><Input type="time" value={f.end} onChange={(v) => setF({ ...f, end: v })} /></Field>
         <Field label="Jumlah Sales (pilihan)"><Input type="number" placeholder="0.00" value={f.sales} onChange={(v) => setF({ ...f, sales: v })} /></Field>
         {autoComm != null ? (
-          <Field label="Komisen (auto ikut struktur brand)"><div className="flex items-center justify-between rounded-xl border px-3.5 py-2.5" style={{ borderColor: "#E4E0F5", background: LAV }}><span className="text-sm font-extrabold" style={{ color: PURPLE }}>{RM(autoComm)}</span><span className="text-[11px] font-semibold" style={{ color: SUB }}>{commissionRuleLabel(brand.commission)}</span></div></Field>
+          <Field label="Komisen (auto ikut struktur brand)"><div className="flex items-center justify-between rounded-xl border px-3.5 py-2.5" style={{ borderColor: "#E4E0F5", background: LAV }}><span className="text-sm font-extrabold" style={{ color: PURPLE }}>{RM(autoComm)}</span><span className="text-[11px] font-semibold" style={{ color: SUB }}>{brand?.commission?.type === "kpi_hourly" ? `KPI ${RM(kpiTargetFor(brand.commission, hours))} (${H(halfHours(hours))}j)` : commissionRuleLabel(brand.commission)}</span></div></Field>
         ) : (
           <Field label="Komisen (isi sendiri)"><Input type="number" placeholder="0.00" value={f.commission} onChange={(v) => setF({ ...f, commission: v })} /></Field>
         )}
@@ -1368,6 +1372,7 @@ function BrandPage({ ctx }) {
     const base = { type: t };
     if (t === "percent") base.percent = comm.percent ?? 5;
     if (t === "kpi") { base.threshold = comm.threshold ?? 800; base.percent = comm.percent ?? 10; }
+    if (t === "kpi_hourly") { base.perHour = comm.perHour ?? 400; base.percent = comm.percent ?? 10; }
     if (t === "tiered") base.tiers = comm.tiers ?? [{ min: 1000, percent: 5 }, { min: 2000, percent: 6 }];
     setForm({ ...form, commission: base });
   }
@@ -1385,6 +1390,7 @@ function BrandPage({ ctx }) {
     let commission = { type: ct };
     if (ct === "percent") commission.percent = Number(comm.percent || 0);
     if (ct === "kpi") { commission.threshold = Number(comm.threshold || 0); commission.percent = Number(comm.percent || 0); }
+    if (ct === "kpi_hourly") { commission.perHour = Number(comm.perHour || 0); commission.percent = Number(comm.percent || 0); }
     if (ct === "tiered") commission.tiers = (comm.tiers || []).map((t) => ({ min: Number(t.min || 0), percent: Number(t.percent || 0) })).sort((a, b) => a.min - b.min);
     const payload = { name: form.name.trim(), weekStart: Number(form.weekStart), phone: form.phone.trim(), address: form.address.trim(), logo: form.logo, rate: current, rates, commission };
     if (editId) { updateBrand({ id: editId, ...payload }); setEditId(null); }
@@ -1442,6 +1448,7 @@ function BrandPage({ ctx }) {
                   <option value="manual">Manual — isi sendiri setiap slot</option>
                   <option value="percent">Peratus dari jumlah sales</option>
                   <option value="kpi">Selepas KPI — baki × %</option>
+                  <option value="kpi_hourly">KPI ikut jam — RM/jam × %</option>
                   <option value="tiered">Berperingkat — capai RM, dapat %</option>
                 </Select>
               </Field>
@@ -1450,6 +1457,9 @@ function BrandPage({ ctx }) {
               )}
               {comm.type === "kpi" && (
                 <div className="mt-3 grid grid-cols-2 gap-3"><Field label="Sasaran KPI (RM)"><Input type="number" value={comm.threshold ?? ""} onChange={(v) => setComm("threshold", v)} placeholder="cth: 800" /></Field><Field label="Peratus baki (%)"><Input type="number" value={comm.percent ?? ""} onChange={(v) => setComm("percent", v)} placeholder="cth: 20" /></Field><p className="col-span-2 -mt-1 text-[11px]" style={{ color: SUB }}>Komisen = (sales − sasaran) × %. Cth sales RM1000, sasaran RM800 → RM200 × 20% = RM40. Bawah sasaran = RM0.</p></div>
+              )}
+              {comm.type === "kpi_hourly" && (
+                <div className="mt-3 grid grid-cols-2 gap-3"><Field label="KPI per jam (RM)"><Input type="number" value={comm.perHour ?? ""} onChange={(v) => setComm("perHour", v)} placeholder="cth: 400" /></Field><Field label="Peratus baki (%)"><Input type="number" value={comm.percent ?? ""} onChange={(v) => setComm("percent", v)} placeholder="cth: 10" /></Field><p className="col-span-2 -mt-1 text-[11px]" style={{ color: SUB }}>Sasaran = jam × RM/jam, dibundar <b>ke bawah</b> setiap ½ jam. Cth RM400/jam: 2j → RM800; 2j 30m → RM1000; 2j 15m → masih RM800. Komisen = (sales − sasaran) × %.</p></div>
               )}
               {comm.type === "tiered" && (
                 <div className="mt-3">
