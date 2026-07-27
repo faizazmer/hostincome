@@ -689,6 +689,12 @@ export default function HostIncome() {
     else { setClaims((prev) => prev.filter((x) => x.id !== id)); }
     flash("Invois dibuka semula. Slot kini boleh diedit di Jadual.");
   }
+  function setClaimAdjustment(id, amount, note) {
+    const patch = { adjustment: Number(amount || 0), adjustmentNote: note || "" };
+    if (cloud && fb.current) { fb.current.update(fb.current.path(`claims/${id}`), patch); }
+    else { setClaims((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c))); }
+    flash("Pelarasan invois disimpan.");
+  }
   function saveSettings(s) {
     if (cloud && fb.current) fb.current.set(fb.current.path("settings"), s);
     setSettings(s); flash("Tetapan disimpan.");
@@ -717,7 +723,7 @@ export default function HostIncome() {
     { id: "tetapan", label: "Tetapan", Icon: SettingsIcon },
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, deleteUserRecord, resendVerification, reloadUser };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, deleteUserRecord, resendVerification, reloadUser };
 
   if (USE_FB && !demo) {
     if (!authReady) return <FullLoader text="Memuatkan…" />;
@@ -814,7 +820,9 @@ function deriveAll(sessions, brands, claims) {
   const thisMonth = sessions.filter((s) => { const d = parseISO(s.date); return d.getMonth() === monthIdx && d.getFullYear() === year; });
 
   const claimedSessionIds = new Set(claims.flatMap((c) => c.sessionIds));
-  const invoices = claims.map((c) => ({ ...c, color: c.color || bById[c.brandId]?.color || PURPLE, label: rangeLabel(c.start, c.end) }))
+  // Pelarasan: hanya invois DIBAYAR, diletak ikut tempoh live (tarikh akhir invois)
+  const monthAdjustment = claims.filter((c) => c.paid && c.adjustment && (() => { const d = parseISO(c.end); return d.getMonth() === monthIdx && d.getFullYear() === year; })()).reduce((a, c) => a + (c.adjustment || 0), 0);
+  const invoices = claims.map((c) => ({ ...c, color: c.color || bById[c.brandId]?.color || PURPLE, label: rangeLabel(c.start, c.end), adjustment: c.adjustment || 0, grandTotal: (c.total || 0) + (c.adjustment || 0) }))
     .sort((a, b) => b.start.localeCompare(a.start) || (b.id > a.id ? 1 : -1));
   const pendingInvoices = invoices.filter((c) => !c.paid);
 
@@ -823,6 +831,7 @@ function deriveAll(sessions, brands, claims) {
     today, todayDone: today.filter(isDone), todayIncome: sumD(today, (x) => x.income), todayHours: sumD(today, (x) => x.hours),
     weekIncome: sumD(calWeek, (x) => x.income), weekSessions: cntD(calWeek), weekHours: sumD(calWeek, (x) => x.hours),
     monthIncome: sumD(thisMonth, (x) => x.income), monthSessions: cntD(thisMonth), monthHours: sumD(thisMonth, (x) => x.hours), monthCommission: sumD(thisMonth, (x) => x.commission), monthHourly: sumD(thisMonth, (x) => x.hours * x.rate),
+    monthAdjustment, monthTotal: sumD(thisMonth, (x) => x.income) + monthAdjustment,
     invoices, pendingInvoices, claimedSessionIds, lockedSessionIds: claimedSessionIds, bById,
   };
 }
@@ -845,7 +854,7 @@ function Sidebar({ NAV, page, setPage, settings, data, ctx }) {
       </nav>
       <div className="mt-auto rounded-2xl p-4" style={{ background: LAV }}>
         <p className="text-xs font-bold" style={{ color: PURPLE }}>Ringkasan Bulanan</p><p className="text-[11px]" style={{ color: SUB }}>{data.monthLabel}</p>
-        <p className="mt-3 text-[11px] font-medium" style={{ color: SUB }}>Jumlah Pendapatan</p><p className="text-xl font-extrabold" style={{ color: INK }}>{RM(data.monthIncome)}</p>
+        <p className="mt-3 text-[11px] font-medium" style={{ color: SUB }}>Jumlah Pendapatan</p><p className="text-xl font-extrabold" style={{ color: INK }}>{RM(data.monthTotal)}</p>
         <div className="mt-3 flex justify-between border-t pt-3" style={{ borderColor: "#E4E0F5" }}><div><p className="text-[10px]" style={{ color: SUB }}>Jam</p><p className="text-sm font-bold">{H(data.monthHours)} jam</p></div><div><p className="text-[10px]" style={{ color: SUB }}>Sesi</p><p className="text-sm font-bold">{data.monthSessions} sesi</p></div></div>
       </div>
       {ctx?.profile && <button onClick={ctx.logout} className="mt-3 flex items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-semibold transition-colors" style={{ borderColor: "#EEF0F4", color: "#DC2626" }}><LogOut size={15} /> Log Keluar</button>}
@@ -950,10 +959,11 @@ function Dashboard({ ctx }) {
       <NextLiveBar next={next} live={live} now={now} ctx={ctx} />
 
       {/* STAT CARDS (3) */}
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-3">
+      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <div className="col-span-2 lg:col-span-1"><StatCard theme="purple" Icon={Wallet} label="Pendapatan Hari Ini" value={RM(data.todayIncome)} sub={`${data.todayDone.length} sesi selesai`} /></div>
         <StatCard theme="green" Icon={TrendingUp} label="Minggu Ini" value={RM(data.weekIncome)} sub={`${data.weekSessions} sesi`} />
-        <StatCard theme="orange" Icon={DollarSign} label="Bulan Ini" value={RM(data.monthIncome)} sub={`${data.monthSessions} sesi`} />
+        <StatCard theme="orange" Icon={DollarSign} label="Bulan Ini" value={RM(data.monthTotal)} sub={data.monthAdjustment ? `${RM(data.monthIncome)} + pelarasan` : `${data.monthSessions} sesi`} />
+        <StatCard theme="teal" Icon={Coins} label="Pelarasan (Bulan)" value={RM(data.monthAdjustment)} sub="dari invois dibayar" />
       </div>
 
       {/* TODAY + CHART */}
@@ -1338,7 +1348,7 @@ function ClaimPage({ ctx }) {
                 <div className="flex flex-col gap-2">
                   {unpaid.map((c) => (
                     <div key={c.id} className="rounded-xl border p-3" style={{ borderColor: "#FDE68A", background: "#FFFBEB" }}>
-                      <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-sm font-bold"><Dot color={c.color} />{c.brand}</span><span className="text-sm font-extrabold" style={{ color: PURPLE }}>{RM(c.total)}</span></div>
+                      <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-sm font-bold"><Dot color={c.color} />{c.brand}</span><span className="text-sm font-extrabold" style={{ color: PURPLE }}>{RM(c.grandTotal || c.total)}</span></div>
                       <p className="mt-0.5 text-[11px]" style={{ color: SUB }}>{c.invoiceNo} · {c.label}</p>
                       <div className="mt-2 flex gap-2">
                         <input value={refMap[c.id] || ""} onChange={(e) => setRefMap({ ...refMap, [c.id]: e.target.value })} placeholder="Ref (pilihan)" className="min-w-0 flex-1 rounded-lg border px-2.5 py-1.5 text-xs outline-none" style={{ borderColor: "#E6E6EE" }} />
@@ -1511,8 +1521,12 @@ function Bulanan({ ctx }) {
   else if (preset === "all") from = "2000-01-01";
   else { from = fromD || "2000-01-01"; to = toD || data.todayStr; }
 
+  const claims = ctx.claims;
   const inRange = sessions.filter((s) => isDone(s) && s.date >= from && s.date <= to && (brandF === "all" || s.brandId === brandF));
-  const income = inRange.reduce((a, s) => a + s.income, 0);
+  const adjInRange = claims.filter((c) => c.paid && c.adjustment && c.end >= from && c.end <= to && (brandF === "all" || c.brandId === brandF));
+  const adjTotal = adjInRange.reduce((a, c) => a + (c.adjustment || 0), 0);
+  const liveIncome = inRange.reduce((a, s) => a + s.income, 0);
+  const income = liveIncome + adjTotal;
   const hours = inRange.reduce((a, s) => a + s.hours, 0);
   const commission = inRange.reduce((a, s) => a + s.commission, 0);
   const hourly = inRange.reduce((a, s) => a + s.hours * s.rate, 0);
@@ -1522,10 +1536,12 @@ function Bulanan({ ctx }) {
   const byWeek = spanDays > 45;
   const buckets = {};
   inRange.forEach((s) => { const key = byWeek ? iso(getMonday(parseISO(s.date))) : s.date; (buckets[key] ||= { income: 0, comm: 0 }); buckets[key].income += s.income; buckets[key].comm += s.commission; });
+  adjInRange.forEach((c) => { const key = byWeek ? iso(getMonday(parseISO(c.end))) : c.end; (buckets[key] ||= { income: 0, comm: 0 }); buckets[key].income += (c.adjustment || 0); });
   const series = Object.keys(buckets).sort().map((k) => ({ name: fmtDateShort(k), Pendapatan: Math.round(buckets[k].income), Komisen: Math.round(buckets[k].comm) }));
 
   const byBrand = {};
   inRange.forEach((s) => { const b = (byBrand[s.brandId] ||= { name: s.brand, income: 0, sessions: 0, hours: 0, color: data.bById[s.brandId]?.color || PURPLE }); b.income += s.income; b.sessions++; b.hours += s.hours; });
+  adjInRange.forEach((c) => { const b = (byBrand[c.brandId] ||= { name: c.brand, income: 0, sessions: 0, hours: 0, color: data.bById[c.brandId]?.color || PURPLE }); b.income += (c.adjustment || 0); });
   const brandArr = Object.values(byBrand).sort((a, b) => b.income - a.income);
 
   const presets = [["7d", "7 Hari"], ["30d", "30 Hari"], ["month", "Bulan Ini"], ["3m", "3 Bulan"], ["year", "Tahun Ini"], ["all", "Semua"], ["custom", "Pilih Tarikh"]];
@@ -1555,7 +1571,7 @@ function Bulanan({ ctx }) {
             <div className="mt-4 rounded-xl p-3" style={{ background: LAV }}>
               <p className="text-[11px] font-semibold" style={{ color: SUB }}>Julat dipilih</p>
               <p className="text-xs font-bold">{fmtDateShort(from)} – {fmtDateShort(to)}</p>
-              <p className="mt-1 text-[11px]" style={{ color: SUB }}>{inRange.length} sesi · {activeDays} hari aktif</p>
+              <p className="mt-1 text-[11px]" style={{ color: SUB }}>{inRange.length} sesi · {activeDays} hari aktif{adjTotal ? ` · +${RM(adjTotal)} pelarasan` : ""}</p>
             </div>
           </Panel>
         </div>
@@ -1631,7 +1647,7 @@ function Invoice({ ctx }) {
     });
   }, [invoices, query, fStatus, fBrand, fYear, fMonth]);
 
-  const totalPending = filtered.filter((w) => !w.paid).reduce((a, w) => a + w.total, 0);
+  const totalPending = filtered.filter((w) => !w.paid).reduce((a, w) => a + w.grandTotal, 0);
 
   if (invoices.length === 0) return (<><PageHead title="Invoice" subtitle="Invoice dijana bila anda buat claim." /><Panel><div className="py-10 text-center text-sm" style={{ color: SUB }}>Belum ada invoice. Buat claim di halaman Claim / Bil.</div></Panel></>);
 
@@ -1662,7 +1678,7 @@ function Invoice({ ctx }) {
                   <td className="py-3 font-semibold">{w.invoiceNo}</td>
                   <td className="py-3"><span className="flex items-center gap-2"><Dot color={w.color} />{w.brand}</span></td>
                   <td className="py-3" style={{ color: SUB }}>{w.label}</td>
-                  <td className="py-3 font-bold" style={{ color: PURPLE }}>{RM(w.total)}</td>
+                  <td className="py-3 font-bold" style={{ color: PURPLE }}>{RM(w.grandTotal)}</td>
                   <td className="py-3"><Pill tone={w.paid ? "green" : "amber"}>{w.paid ? "Paid" : "Pending"}</Pill></td>
                   <td className="py-3 text-right"><button onClick={(e) => { e.stopPropagation(); setOpenId(w.id); }} className="rounded-lg border px-3 py-1.5 text-xs font-bold" style={{ borderColor: "#EEF0F4", color: PURPLE }}>Buka</button></td>
                 </tr>
@@ -1679,13 +1695,15 @@ function Invoice({ ctx }) {
 }
 
 function InvoiceModal({ invId, ctx, onClose }) {
-  const { data, settings, sessions, brands, markClaimPaid, reopenClaim, isAdmin, setPage } = ctx;
+  const { data, settings, sessions, brands, markClaimPaid, reopenClaim, setClaimAdjustment, isAdmin, setPage } = ctx;
   const inv = data.invoices.find((w) => w.id === invId);
+  const [adj, setAdj] = useState(inv && inv.adjustment ? String(inv.adjustment) : "");
+  const [adjNote, setAdjNote] = useState((inv && inv.adjustmentNote) || "");
   const [ref, setRef] = useState("");
   const brandInfo = brands.find((b) => b.id === inv?.brandId);
   const items = useMemo(() => { if (!inv) return []; const set = new Set(inv.sessionIds); return sessions.filter((s) => set.has(s.id)).sort((a, b) => a.date.localeCompare(b.date) || a.start.localeCompare(b.start)); }, [inv, sessions]);
   if (!inv) return null;
-  function share() { const txt = `Invoice ${inv.invoiceNo}%0ACompany: ${inv.brand}%0AHost: ${settings.hostName}%0APeriod: ${inv.label}%0AGrand Total: ${RM(inv.total)}%0AStatus: ${inv.paid ? "PAID" : "PENDING"}%0ABank: ${settings.bankName} ${settings.bankAccount}`; window.open(`https://wa.me/?text=${txt}`, "_blank"); }
+  function share() { const txt = `Invoice ${inv.invoiceNo}%0ACompany: ${inv.brand}%0AHost: ${settings.hostName}%0APeriod: ${inv.label}%0AGrand Total: ${RM(inv.grandTotal)}%0AStatus: ${inv.paid ? "PAID" : "PENDING"}%0ABank: ${settings.bankName} ${settings.bankAccount}`; window.open(`https://wa.me/?text=${txt}`, "_blank"); }
 
   return (
     <Modal onClose={onClose} xl>
@@ -1752,8 +1770,9 @@ function InvoiceModal({ invId, ctx, onClose }) {
           <div className="order-1 flex flex-col justify-between gap-2 lg:order-2">
             <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>Hourly Income</span><span className="font-semibold">{RM(inv.hourlyIncome)}</span></div>
             <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>Commission</span><span className="font-semibold">{RM(inv.commission)}</span></div>
+            {inv.adjustment ? <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>Pelarasan{inv.adjustmentNote ? ` (${inv.adjustmentNote})` : ""}</span><span className="font-semibold" style={{ color: inv.adjustment >= 0 ? "#15803D" : "#DC2626" }}>{inv.adjustment >= 0 ? "+" : ""}{RM(inv.adjustment)}</span></div> : null}
             <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>{inv.sessions} sesi - {H(inv.hours)} jam</span><span> </span></div>
-            <div className="mt-1 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><span className="text-sm font-bold text-white">Grand Total</span><span className="text-xl font-extrabold text-white">{RM(inv.total)}</span></div>
+            <div className="mt-1 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><span className="text-sm font-bold text-white">Grand Total</span><span className="text-xl font-extrabold text-white">{RM(inv.grandTotal)}</span></div>
           </div>
         </div>
 
@@ -1764,6 +1783,12 @@ function InvoiceModal({ invId, ctx, onClose }) {
         <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><Download size={15} /> Download PDF</button>
         <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4" }}><Printer size={15} style={{ color: PURPLE }} /> Print</button>
         <button onClick={share} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ background: "#25D366" }}><Share2 size={15} /> Share WhatsApp</button>
+        <div className="flex w-full flex-wrap items-center gap-2 rounded-xl border p-3" style={{ borderColor: "#E4E0F5", background: "#FCFBFE" }}>
+          <span className="text-xs font-bold" style={{ color: SUB }}>Pelarasan (jualan lewat / lebihan bayaran):</span>
+          <input type="number" value={adj} onChange={(e) => setAdj(e.target.value)} placeholder="RM +/-" className="w-28 rounded-xl border px-3 py-2 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} />
+          <input value={adjNote} onChange={(e) => setAdjNote(e.target.value)} placeholder="Nota (cth: jualan lewat)" className="min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} />
+          <button onClick={() => setClaimAdjustment(inv.id, adj, adjNote)} className="rounded-xl px-3.5 py-2 text-sm font-bold text-white" style={{ background: PURPLE }}>Simpan Pelarasan</button>
+        </div>
         {!inv.paid && <div className="flex items-center gap-2"><input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Payment ref (pilihan)" className="rounded-xl border px-3 py-2.5 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} /><button onClick={() => { markClaimPaid(inv.id, ref); setRef(""); }} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ background: "#16A34A" }}><CheckCircle2 size={15} /> Mark As Paid</button></div>}
         {!inv.paid && <button onClick={() => { if (confirm("Buka semula invois ini? Invois akan dipadam dan slot boleh diedit semula di Jadual.")) { reopenClaim(inv.id); onClose(); setPage("jadual"); } }} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold" style={{ borderColor: "#FDE68A", color: "#B45309", background: "#FFFBEB" }}><Pencil size={15} /> Buka Semula & Edit</button>}
         {inv.paid && isAdmin && <button onClick={() => { if (confirm("AMARAN: Invois ini SUDAH DIBAYAR.\n\nBuka semula akan PADAM invois & rekod bayaran ini, dan slot kembali boleh diedit di Jadual. Teruskan?")) { reopenClaim(inv.id); onClose(); setPage("jadual"); } }} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold" style={{ borderColor: "#FECACA", color: "#DC2626", background: "#FEF2F2" }}><Lock size={15} /> Buka Semula (Admin)</button>}
@@ -1777,8 +1802,8 @@ function InvMeta({ label, value }) { return <div><p className="text-xs" style={{
 function Pembayaran({ ctx }) {
   const { data } = ctx;
   const rows = data.invoices.map((w) => { const due = iso(addDays(parseISO(w.end), 7)); const status = w.paid ? "Paid" : (parseISO(due) < TODAY ? "Overdue" : "Pending"); return { ...w, due, status }; });
-  const totalPaid = rows.filter((r) => r.status === "Paid").reduce((a, r) => a + r.total, 0);
-  const totalPending = rows.filter((r) => r.status !== "Paid").reduce((a, r) => a + r.total, 0);
+  const totalPaid = rows.filter((r) => r.status === "Paid").reduce((a, r) => a + r.grandTotal, 0);
+  const totalPending = rows.filter((r) => r.status !== "Paid").reduce((a, r) => a + r.grandTotal, 0);
   const toneFor = (s) => (s === "Paid" ? "green" : s === "Overdue" ? "red" : "amber");
   return (
     <>
@@ -1797,7 +1822,7 @@ function Pembayaran({ ctx }) {
               {rows.map((r) => (
                 <tr key={r.id} className="border-t" style={{ borderColor: "#F1F0F6" }}>
                   <td className="py-3"><span className="flex items-center gap-2 font-semibold"><Dot color={r.color} />{r.brand}</span></td>
-                  <td className="py-3 text-xs" style={{ color: SUB }}>{r.invoiceNo}</td><td className="py-3" style={{ color: SUB }}>{r.label}</td><td className="py-3 font-bold" style={{ color: PURPLE }}>{RM(r.total)}</td><td className="py-3" style={{ color: SUB }}>{fmtDate(r.due)}</td><td className="py-3" style={{ color: SUB }}>{r.ref || "-"}</td><td className="py-3"><Pill tone={toneFor(r.status)}>{r.status}</Pill></td>
+                  <td className="py-3 text-xs" style={{ color: SUB }}>{r.invoiceNo}</td><td className="py-3" style={{ color: SUB }}>{r.label}</td><td className="py-3 font-bold" style={{ color: PURPLE }}>{RM(r.grandTotal)}</td><td className="py-3" style={{ color: SUB }}>{fmtDate(r.due)}</td><td className="py-3" style={{ color: SUB }}>{r.ref || "-"}</td><td className="py-3"><Pill tone={toneFor(r.status)}>{r.status}</Pill></td>
                 </tr>
               ))}
             </tbody>
