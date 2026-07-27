@@ -746,7 +746,9 @@ export default function HostIncome() {
           .hi-overlay { position: static !important; display: block !important; }
           .hi-card { position: static !important; max-height: none !important; overflow: visible !important; box-shadow: none !important; padding: 0 !important; border-radius: 0 !important; }
           #invoice-print { position: absolute; left: 0; top: 0; width: 100%; padding: 16px; border: none !important; box-shadow: none !important; background: #fff !important; }
+          .print-only { display: flex !important; visibility: visible !important; }
         }
+        .print-only { display: none; }
         @keyframes pop { from { transform: translateY(8px) scale(.98); opacity:0 } to { transform:none; opacity:1 } }
         ::-webkit-scrollbar{width:8px;height:8px}::-webkit-scrollbar-thumb{background:#E2E0EC;border-radius:8px}
         input,select,button{font-family:inherit}
@@ -1770,7 +1772,12 @@ function InvoiceModal({ invId, ctx, onClose }) {
           <div className="order-1 flex flex-col justify-between gap-2 lg:order-2">
             <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>Hourly Income</span><span className="font-semibold">{RM(inv.hourlyIncome)}</span></div>
             <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>Commission</span><span className="font-semibold">{RM(inv.commission)}</span></div>
-            {inv.adjustment ? <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>Pelarasan{inv.adjustmentNote ? ` (${inv.adjustmentNote})` : ""}</span><span className="font-semibold" style={{ color: inv.adjustment >= 0 ? "#15803D" : "#DC2626" }}>{inv.adjustment >= 0 ? "+" : ""}{RM(inv.adjustment)}</span></div> : null}
+            {inv.adjustment ? <div className="print-only items-center justify-between text-sm"><span style={{ color: SUB }}>Pelarasan{inv.adjustmentNote ? ` (${inv.adjustmentNote})` : ""}</span><span className="font-semibold" style={{ color: inv.adjustment >= 0 ? "#15803D" : "#DC2626" }}>{inv.adjustment >= 0 ? "+" : ""}{RM(inv.adjustment)}</span></div> : null}
+            <div className="no-print flex items-center justify-between gap-2 text-sm">
+              <span style={{ color: SUB }}>Pelarasan (Lebihan/Kurang)</span>
+              <div className="flex items-center gap-1"><span className="text-xs" style={{ color: SUB }}>RM</span><input type="number" value={adj} onChange={(e) => setAdj(e.target.value)} onBlur={() => setClaimAdjustment(inv.id, adj, adjNote)} placeholder="0.00" className="w-24 rounded-lg border px-2 py-1 text-right text-sm font-semibold outline-none" style={{ borderColor: "#E4E0F5", color: Number(adj) < 0 ? "#DC2626" : "#15803D" }} /></div>
+            </div>
+            <div className="no-print"><input value={adjNote} onChange={(e) => setAdjNote(e.target.value)} onBlur={() => setClaimAdjustment(inv.id, adj, adjNote)} placeholder="Nota pelarasan (cth: jualan lewat)" className="w-full rounded-lg border px-2.5 py-1.5 text-xs outline-none" style={{ borderColor: "#EEF0F4" }} /></div>
             <div className="flex items-center justify-between text-sm"><span style={{ color: SUB }}>{inv.sessions} sesi - {H(inv.hours)} jam</span><span> </span></div>
             <div className="mt-1 flex items-center justify-between rounded-xl px-4 py-3" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><span className="text-sm font-bold text-white">Grand Total</span><span className="text-xl font-extrabold text-white">{RM(inv.grandTotal)}</span></div>
           </div>
@@ -1783,12 +1790,6 @@ function InvoiceModal({ invId, ctx, onClose }) {
         <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><Download size={15} /> Download PDF</button>
         <button onClick={() => window.print()} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4" }}><Printer size={15} style={{ color: PURPLE }} /> Print</button>
         <button onClick={share} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ background: "#25D366" }}><Share2 size={15} /> Share WhatsApp</button>
-        <div className="flex w-full flex-wrap items-center gap-2 rounded-xl border p-3" style={{ borderColor: "#E4E0F5", background: "#FCFBFE" }}>
-          <span className="text-xs font-bold" style={{ color: SUB }}>Pelarasan (jualan lewat / lebihan bayaran):</span>
-          <input type="number" value={adj} onChange={(e) => setAdj(e.target.value)} placeholder="RM +/-" className="w-28 rounded-xl border px-3 py-2 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} />
-          <input value={adjNote} onChange={(e) => setAdjNote(e.target.value)} placeholder="Nota (cth: jualan lewat)" className="min-w-0 flex-1 rounded-xl border px-3 py-2 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} />
-          <button onClick={() => setClaimAdjustment(inv.id, adj, adjNote)} className="rounded-xl px-3.5 py-2 text-sm font-bold text-white" style={{ background: PURPLE }}>Simpan Pelarasan</button>
-        </div>
         {!inv.paid && <div className="flex items-center gap-2"><input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="Payment ref (pilihan)" className="rounded-xl border px-3 py-2.5 text-sm outline-none" style={{ borderColor: "#E6E6EE" }} /><button onClick={() => { markClaimPaid(inv.id, ref); setRef(""); }} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ background: "#16A34A" }}><CheckCircle2 size={15} /> Mark As Paid</button></div>}
         {!inv.paid && <button onClick={() => { if (confirm("Buka semula invois ini? Invois akan dipadam dan slot boleh diedit semula di Jadual.")) { reopenClaim(inv.id); onClose(); setPage("jadual"); } }} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold" style={{ borderColor: "#FDE68A", color: "#B45309", background: "#FFFBEB" }}><Pencil size={15} /> Buka Semula & Edit</button>}
         {inv.paid && isAdmin && <button onClick={() => { if (confirm("AMARAN: Invois ini SUDAH DIBAYAR.\n\nBuka semula akan PADAM invois & rekod bayaran ini, dan slot kembali boleh diedit di Jadual. Teruskan?")) { reopenClaim(inv.id); onClose(); setPage("jadual"); } }} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold" style={{ borderColor: "#FECACA", color: "#DC2626", background: "#FEF2F2" }}><Lock size={15} /> Buka Semula (Admin)</button>}
