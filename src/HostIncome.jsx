@@ -1280,6 +1280,7 @@ function ClaimPage({ ctx }) {
   const [start, setStart] = useState(first ? cycleStart(data.todayStr, first.weekStart) : data.todayStr);
   const [end, setEnd] = useState(first ? iso(addDays(parseISO(cycleStart(data.todayStr, first.weekStart)), 6)) : data.todayStr);
   const [refMap, setRefMap] = useState({});
+  const [openInv, setOpenInv] = useState(null);
 
   function pickBrand(id) {
     setBrandId(id);
@@ -1352,10 +1353,7 @@ function ClaimPage({ ctx }) {
                     <div key={c.id} className="rounded-xl border p-3" style={{ borderColor: "#FDE68A", background: "#FFFBEB" }}>
                       <div className="flex items-center justify-between"><span className="flex items-center gap-2 text-sm font-bold"><Dot color={c.color} />{c.brand}</span><span className="text-sm font-extrabold" style={{ color: PURPLE }}>{RM(c.grandTotal || c.total)}</span></div>
                       <p className="mt-0.5 text-[11px]" style={{ color: SUB }}>{c.invoiceNo} · {c.label}</p>
-                      <div className="mt-2 flex gap-2">
-                        <input value={refMap[c.id] || ""} onChange={(e) => setRefMap({ ...refMap, [c.id]: e.target.value })} placeholder="Ref (pilihan)" className="min-w-0 flex-1 rounded-lg border px-2.5 py-1.5 text-xs outline-none" style={{ borderColor: "#E6E6EE" }} />
-                        <button onClick={() => markClaimPaid(c.id, refMap[c.id])} className="shrink-0 rounded-lg px-2.5 py-1.5 text-xs font-bold text-white" style={{ background: "#16A34A" }}>Dibayar</button>
-                      </div>
+                      <button onClick={() => setOpenInv(c.id)} className="mt-2 flex w-full items-center justify-center gap-1.5 rounded-lg px-2.5 py-2 text-xs font-bold text-white" style={{ background: "#16A34A" }}><CheckCircle2 size={13} /> Buka & Tandai Dibayar</button>
                     </div>
                   ))}
                 </div>
@@ -1364,6 +1362,7 @@ function ClaimPage({ ctx }) {
           </div>
         </div>
       )}
+      {openInv && <InvoiceModal invId={openInv} ctx={ctx} onClose={() => setOpenInv(null)} />}
     </>
   );
 }
