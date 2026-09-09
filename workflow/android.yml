@@ -1,9 +1,9 @@
 name: Build Android APK
 
 on:
-  workflow_dispatch:      # boleh tekan "Run workflow" secara manual
+  workflow_dispatch:
   push:
-    branches: [ main ]    # auto-bina setiap kali commit ke main
+    branches: [ main ]
 
 jobs:
   build-apk:
@@ -28,7 +28,7 @@ jobs:
 
       - name: Install Capacitor
         run: |
-          npm install --save-dev @capacitor/cli@6
+          npm install --save-dev @capacitor/cli@6 @capacitor/assets@3
           npm install @capacitor/core@6 @capacitor/android@6
 
       - name: Build web app (Vite -> dist)
@@ -36,6 +36,9 @@ jobs:
 
       - name: Add Android platform
         run: npx cap add android
+
+      - name: Generate app icon & splash (from resources/)
+        run: npx capacitor-assets generate --android
 
       - name: Sync web assets to Android
         run: npx cap sync android
