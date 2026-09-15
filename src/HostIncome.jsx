@@ -529,12 +529,91 @@ function AdminPage({ ctx }) {
     </>
   );
 }
+function UserAffiliatePage({ ctx }) {
+  const { profile, users } = ctx;
+  const a = (profile && profile.affiliate) || {};
+  const code = (a.code || "").toUpperCase();
+  const percent = Number(a.percent || 0);
+  const price = Number(a.price || 0);
+  const type = a.type || "monthly";
+  const link = (typeof window !== "undefined" ? window.location.origin : "") + "/?ref=" + (code || "CODE");
+  const CM = monthKey();
+  const MON = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
+  const cmLabel = MON[TODAY.getMonth()] + " " + TODAY.getFullYear();
+
+  const referrals = (users || []).filter((u) => (u.referredBy || "").toUpperCase() === code && code);
+  const refCount = referrals.length;
+  const activeThisMonth = referrals.filter((u) => (u.billing || {})[CM] === "open").length;
+  const joinedThisMonth = referrals.filter((u) => (u.createdAt || "").slice(0, 7) === CM).length;
+  const totalOpenMonths = referrals.reduce((acc, u) => acc + Object.values(u.billing || {}).filter((v) => v === "open").length, 0);
+
+  const thisMonthEarn = type === "oneoff" ? joinedThisMonth * price * percent / 100 : activeThisMonth * price * percent / 100;
+  const totalEarn = type === "oneoff" ? refCount * price * percent / 100 : totalOpenMonths * price * percent / 100;
+
+  const copy = (t) => { try { navigator.clipboard.writeText(t); ctx.flash("Disalin."); } catch (e) {} };
+  const shareWA = () => { const msg = `Jom guna HostIncome! Daftar guna link saya: ${link}`; window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank"); };
+
+  return (
+    <>
+      <PageHead title="Program Affiliate" subtitle="Kongsi link anda, jemput host lain & dapat komisen." />
+
+      <div className="rounded-2xl p-5 text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)", boxShadow: "0 12px 30px rgba(109,40,217,0.28)" }}>
+        <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider opacity-90"><Share2 size={14} /> Link Affiliate Anda</p>
+        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+          <input readOnly value={link} className="min-w-0 flex-1 rounded-xl px-3 py-2.5 text-sm font-semibold outline-none" style={{ background: "rgba(255,255,255,0.18)", color: "#fff" }} />
+          <div className="flex gap-2">
+            <button onClick={() => copy(link)} className="rounded-xl px-4 py-2.5 text-sm font-bold" style={{ background: "#fff", color: PURPLE }}>Salin Link</button>
+            <button onClick={shareWA} className="rounded-xl px-4 py-2.5 text-sm font-bold" style={{ background: "rgba(255,255,255,0.2)", color: "#fff" }}>WhatsApp</button>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm">
+          <span>Kod: <b className="cursor-pointer underline" onClick={() => copy(code)}>{code || "—"}</b></span>
+          <span>Komisen: <b>{percent}%</b></span>
+          <span>Jenis: <b>{type === "oneoff" ? "One-off (sekali)" : "Bulanan"}</b></span>
+        </div>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard theme="purple" Icon={Users} label="Jumlah Rujukan" value={`${refCount}`} sub="user berdaftar" />
+        <StatCard theme="green" Icon={CheckCircle2} label="Aktif Bulan Ini" value={`${activeThisMonth}`} sub={cmLabel} />
+        <StatCard theme="orange" Icon={Wallet} label={`Komisen ${cmLabel}`} value={RM(thisMonthEarn)} sub={price ? `${percent}% × RM${price}` : "harga belum diset"} />
+        <StatCard theme="pink" Icon={Coins} label="Jumlah Komisen" value={RM(totalEarn)} sub="keseluruhan" />
+      </div>
+
+      <Panel className="mt-6" title={`Senarai Rujukan (${refCount})`}>
+        {refCount === 0 ? (
+          <div className="py-8 text-center text-sm" style={{ color: SUB }}>Belum ada rujukan. Kongsi link anda untuk mula dapat komisen!</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead><tr className="text-left" style={{ color: SUB }}><th className="pb-3 font-semibold">User</th><th className="pb-3 font-semibold">Tarikh Daftar</th><th className="pb-3 font-semibold">Status {cmLabel}</th></tr></thead>
+              <tbody>
+                {referrals.map((u) => {
+                  const open = (u.billing || {})[CM] === "open";
+                  return (
+                    <tr key={u.uid} className="border-t" style={{ borderColor: "#F1F0F6" }}>
+                      <td className="py-3"><div className="flex items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(u.name || u.email || "?").slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate font-bold">{u.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{u.email}</p></div></div></td>
+                      <td className="py-3 text-xs" style={{ color: SUB }}>{u.createdAt || "-"}</td>
+                      <td className="py-3"><Pill tone={open ? "green" : "amber"}>{open ? "Aktif" : "Belum bayar"}</Pill></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="mt-3 text-xs" style={{ color: SUB }}>Komisen dikira {type === "oneoff" ? "sekali bagi setiap rujukan" : "setiap bulan rujukan anda aktif (bayar)"}. Anggaran sahaja — pembayaran komisen diuruskan oleh admin.</p>
+      </Panel>
+    </>
+  );
+}
 function AffiliateModal({ au, users, onClose, onSave }) {
   const a = au.affiliate || {};
   const [enabled, setEnabled] = useState(!!a.enabled);
   const [code, setCode] = useState(a.code || "");
   const [percent, setPercent] = useState(a.percent != null ? String(a.percent) : "20");
   const [type, setType] = useState(a.type || "monthly");
+  const [price, setPrice] = useState(a.price != null ? String(a.price) : "29");
   const gen = () => setCode(((au.name || "AFF").replace(/[^A-Za-z]/g, "").slice(0, 5).toUpperCase() || "AFF") + Math.floor(1000 + Math.random() * 9000));
   const link = (typeof window !== "undefined" ? window.location.origin : "") + "/?ref=" + (code || "CODE");
   const refCount = users.filter((u) => (u.referredBy || "").toUpperCase() === (code || "").toUpperCase() && code).length;
@@ -560,13 +639,14 @@ function AffiliateModal({ au, users, onClose, onSave }) {
           </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Peratus Komisen (%)"><Input type="number" value={percent} onChange={setPercent} placeholder="cth: 20" /></Field>
-            <Field label="Jenis Komisen">
-              <div className="flex gap-1.5">
-                <button onClick={() => setType("oneoff")} className="flex-1 rounded-xl border px-2 py-2.5 text-xs font-bold" style={type === "oneoff" ? { background: PURPLE, color: "#fff", borderColor: PURPLE } : { borderColor: "#EEF0F4", color: SUB }}>One-off</button>
-                <button onClick={() => setType("monthly")} className="flex-1 rounded-xl border px-2 py-2.5 text-xs font-bold" style={type === "monthly" ? { background: PURPLE, color: "#fff", borderColor: PURPLE } : { borderColor: "#EEF0F4", color: SUB }}>Bulanan</button>
-              </div>
-            </Field>
+            <Field label="Harga Langganan (RM/bulan)"><Input type="number" value={price} onChange={setPrice} placeholder="cth: 29" /></Field>
           </div>
+          <Field label="Jenis Komisen">
+            <div className="flex gap-1.5">
+              <button onClick={() => setType("oneoff")} className="flex-1 rounded-xl border px-2 py-2.5 text-xs font-bold" style={type === "oneoff" ? { background: PURPLE, color: "#fff", borderColor: PURPLE } : { borderColor: "#EEF0F4", color: SUB }}>One-off (sekali)</button>
+              <button onClick={() => setType("monthly")} className="flex-1 rounded-xl border px-2 py-2.5 text-xs font-bold" style={type === "monthly" ? { background: PURPLE, color: "#fff", borderColor: PURPLE } : { borderColor: "#EEF0F4", color: SUB }}>Bulanan</button>
+            </div>
+          </Field>
           <Field label="Link Affiliate (untuk dikongsi)">
             <div className="flex items-center gap-2">
               <input readOnly value={link} className="min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-xs outline-none" style={{ borderColor: "#E6E6EE", color: SUB }} />
@@ -579,7 +659,7 @@ function AffiliateModal({ au, users, onClose, onSave }) {
 
       <div className="mt-5 flex items-center gap-2">
         <button onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Batal</button>
-        <button onClick={() => { onSave({ enabled, code: (code || "").toUpperCase(), percent: Number(percent || 0), type }); onClose(); }} className="ml-auto inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><CheckCircle2 size={16} /> Simpan</button>
+        <button onClick={() => { onSave({ enabled, code: (code || "").toUpperCase(), percent: Number(percent || 0), type, price: Number(price || 0) }); onClose(); }} className="ml-auto inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><CheckCircle2 size={16} /> Simpan</button>
       </div>
     </Modal>
   );
@@ -636,6 +716,7 @@ export default function HostIncome() {
   const [toast, setToast] = useState(null);
   function flash(msg) { setToast(msg); setTimeout(() => setToast(null), 2600); }
   const isAdmin = profile?.role === "admin";
+  const isAffiliate = !!(profile && profile.affiliate && profile.affiliate.enabled);
 
   // --- Init Firebase + Auth listener ---
   useEffect(() => {
@@ -722,13 +803,13 @@ export default function HostIncome() {
 
   // --- Admin: subscribe semua pengguna ---
   useEffect(() => {
-    if (!USE_FB || !isAdmin || !fb.current) { setUsers([]); return; }
+    if (!USE_FB || (!isAdmin && !isAffiliate) || !fb.current) { setUsers([]); return; }
     const off = fb.current.onValue(fb.current.usersPath(), (s) => {
       const v = s.val() || {};
       setUsers(Object.entries(v).map(([uid, u]) => ({ uid, ...u })));
     });
     return () => off && off();
-  }, [isAdmin]);
+  }, [isAdmin, isAffiliate]);
 
   // --- Auth actions ---
   async function login(email, password) {
@@ -860,6 +941,7 @@ export default function HostIncome() {
     { id: "invoice", label: "Invoice", Icon: FileText },
     { id: "pembayaran", label: "Pembayaran", Icon: Wallet },
     { id: "tetapan", label: "Tetapan", Icon: SettingsIcon },
+    ...(isAffiliate && !isAdmin ? [{ id: "affiliate", label: "Affiliate", Icon: Share2 }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
   const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, deleteUserRecord, resendVerification, reloadUser };
@@ -928,6 +1010,7 @@ export default function HostIncome() {
           {page === "invoice" && <Invoice ctx={ctx} />}
           {page === "pembayaran" && <Pembayaran ctx={ctx} />}
           {page === "tetapan" && <Tetapan ctx={ctx} />}
+          {page === "affiliate" && isAffiliate && <UserAffiliatePage ctx={ctx} />}
           {page === "admin" && isAdmin && <AdminPage ctx={ctx} />}
         </main>
       </div>
