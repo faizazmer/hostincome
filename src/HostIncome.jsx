@@ -417,7 +417,7 @@ function Tutorial({ onDone, setPage }) {
   );
 }
 function AdminPage({ ctx }) {
-  const { users, authUser, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, deleteUserRecord } = ctx;
+  const { users, authUser, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord } = ctx;
   const [q, setQ] = useState("");
   const [billUid, setBillUid] = useState(null);
   const [affUid, setAffUid] = useState(null);
@@ -496,6 +496,11 @@ function AdminPage({ ctx }) {
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(bu.name || bu.email || "?").slice(0, 2).toUpperCase()}</div>
               <div className="min-w-0"><p className="truncate text-base font-bold">Langganan — {bu.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{bu.email}</p></div>
             </div>
+            <div className="mb-3 rounded-xl border p-3" style={{ borderColor: "#E4E0F5", background: "#FCFBFE" }}>
+              <p className="mb-1 text-xs font-bold" style={{ color: SUB }}>Harga Asas (RM/bulan) — default</p>
+              <input key={bu.uid} type="number" defaultValue={bu.subPrice != null ? bu.subPrice : ""} onBlur={(e) => setUserSubPrice(bu.uid, e.target.value)} placeholder="cth: 29" className="w-40 rounded-xl border px-3 py-2 text-sm font-bold outline-none" style={{ borderColor: "#E6E6EE" }} />
+              <p className="mt-1 text-[11px]" style={{ color: SUB }}>Digunakan untuk bulan tanpa harga khas. Anda boleh set harga promo berbeza pada bulan tertentu di bawah (cth bulan pertama murah).</p>
+            </div>
             <div className="mb-3 flex items-center justify-between">
               <button onClick={() => setBillYear(billYear - 1)} className="rounded-lg border p-2" style={{ borderColor: "#EEF0F4" }}><ChevronLeft size={16} style={{ color: PURPLE }} /></button>
               <span className="text-lg font-extrabold">{billYear}</span>
@@ -504,11 +509,18 @@ function AdminPage({ ctx }) {
             <div className="grid grid-cols-3 gap-2">
               {MON.map((mn, m) => {
                 const k = monthKey(new Date(billYear, m, 1)); const open = (bu.billing || {})[k] === "open"; const isNow = k === CM;
+                const mp = (bu.prices || {})[k];
                 return (
-                  <button key={k} onClick={() => setUserBilling(bu.uid, k, open ? "close" : "open")} className="flex items-center justify-between rounded-xl border px-3 py-2.5 text-sm font-bold transition-all" style={open ? { background: "#16A34A", color: "#fff", borderColor: "#16A34A" } : { background: "#fff", color: "#DC2626", borderColor: "#FECACA" }}>
-                    <span>{mn}{isNow && <span className="ml-1 text-[9px] font-bold" style={{ opacity: 0.7 }}>•kini</span>}</span>
-                    {open ? <CheckCircle2 size={16} /> : <span className="h-4 w-4 rounded-full border-2" style={{ borderColor: "#FECACA" }} />}
-                  </button>
+                  <div key={k} className="rounded-xl border p-2" style={{ borderColor: open ? "#BBF7D0" : "#EEF0F4", background: open ? "#F0FDF4" : "#fff" }}>
+                    <button onClick={() => setUserBilling(bu.uid, k, open ? "close" : "open")} className="flex w-full items-center justify-between text-sm font-bold" style={{ color: open ? "#15803D" : "#DC2626" }}>
+                      <span>{mn}{isNow && <span className="ml-1 text-[9px]" style={{ opacity: 0.7 }}>•kini</span>}</span>
+                      {open ? <CheckCircle2 size={15} /> : <span className="h-4 w-4 rounded-full border-2" style={{ borderColor: "#FECACA" }} />}
+                    </button>
+                    <div className="mt-1.5 flex items-center gap-1 rounded-lg border px-1.5" style={{ borderColor: "#EEF0F4", background: "#fff" }}>
+                      <span className="text-[10px]" style={{ color: SUB }}>RM</span>
+                      <input type="number" defaultValue={mp != null ? mp : ""} placeholder={bu.subPrice != null ? String(bu.subPrice) : "0"} onBlur={(e) => setUserMonthPrice(bu.uid, k, e.target.value)} className="w-full bg-transparent py-1 text-xs font-semibold outline-none" />
+                    </div>
+                  </div>
                 );
               })}
             </div>
@@ -534,7 +546,6 @@ function UserAffiliatePage({ ctx }) {
   const a = (profile && profile.affiliate) || {};
   const code = (a.code || "").toUpperCase();
   const percent = Number(a.percent || 0);
-  const price = Number(a.price || 0);
   const type = a.type || "monthly";
   const link = (typeof window !== "undefined" ? window.location.origin : "") + "/?ref=" + (code || "CODE");
   const CM = monthKey();
@@ -544,11 +555,15 @@ function UserAffiliatePage({ ctx }) {
   const referrals = (users || []).filter((u) => (u.referredBy || "").toUpperCase() === code && code);
   const refCount = referrals.length;
   const activeThisMonth = referrals.filter((u) => (u.billing || {})[CM] === "open").length;
-  const joinedThisMonth = referrals.filter((u) => (u.createdAt || "").slice(0, 7) === CM).length;
-  const totalOpenMonths = referrals.reduce((acc, u) => acc + Object.values(u.billing || {}).filter((v) => v === "open").length, 0);
+  const openMonths = (u) => Object.values(u.billing || {}).filter((v) => v === "open").length;
+  const priceForMonth = (u, m) => { const p = u.prices && u.prices[m]; return p != null ? Number(p) : Number(u.subPrice || 0); };
 
-  const thisMonthEarn = type === "oneoff" ? joinedThisMonth * price * percent / 100 : activeThisMonth * price * percent / 100;
-  const totalEarn = type === "oneoff" ? refCount * price * percent / 100 : totalOpenMonths * price * percent / 100;
+  let thisMonthEarn = 0, totalEarn = 0;
+  if (type === "oneoff") {
+    referrals.forEach((u) => { const oms = Object.keys(u.billing || {}).filter((m) => u.billing[m] === "open").sort(); if (oms.length) { const c = priceForMonth(u, oms[0]) * percent / 100; totalEarn += c; if (oms[0] === CM) thisMonthEarn += c; } });
+  } else {
+    referrals.forEach((u) => { Object.keys(u.billing || {}).forEach((m) => { if (u.billing[m] === "open") { const c = priceForMonth(u, m) * percent / 100; totalEarn += c; if (m === CM) thisMonthEarn += c; } }); });
+  }
 
   const copy = (t) => { try { navigator.clipboard.writeText(t); ctx.flash("Disalin."); } catch (e) {} };
   const shareWA = () => { const msg = `Jom guna HostIncome! Daftar guna link saya: ${link}`; window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank"); };
@@ -576,7 +591,7 @@ function UserAffiliatePage({ ctx }) {
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard theme="purple" Icon={Users} label="Jumlah Rujukan" value={`${refCount}`} sub="user berdaftar" />
         <StatCard theme="green" Icon={CheckCircle2} label="Aktif Bulan Ini" value={`${activeThisMonth}`} sub={cmLabel} />
-        <StatCard theme="orange" Icon={Wallet} label={`Komisen ${cmLabel}`} value={RM(thisMonthEarn)} sub={price ? `${percent}% × RM${price}` : "harga belum diset"} />
+        <StatCard theme="orange" Icon={Wallet} label={`Komisen ${cmLabel}`} value={RM(thisMonthEarn)} sub={`${percent}% komisen`} />
         <StatCard theme="pink" Icon={Coins} label="Jumlah Komisen" value={RM(totalEarn)} sub="keseluruhan" />
       </div>
 
@@ -586,13 +601,14 @@ function UserAffiliatePage({ ctx }) {
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-left" style={{ color: SUB }}><th className="pb-3 font-semibold">User</th><th className="pb-3 font-semibold">Tarikh Daftar</th><th className="pb-3 font-semibold">Status {cmLabel}</th></tr></thead>
+              <thead><tr className="text-left" style={{ color: SUB }}><th className="pb-3 font-semibold">User</th><th className="pb-3 font-semibold">Harga Sub</th><th className="pb-3 font-semibold">Tarikh Daftar</th><th className="pb-3 font-semibold">Status {cmLabel}</th></tr></thead>
               <tbody>
                 {referrals.map((u) => {
                   const open = (u.billing || {})[CM] === "open";
                   return (
                     <tr key={u.uid} className="border-t" style={{ borderColor: "#F1F0F6" }}>
                       <td className="py-3"><div className="flex items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(u.name || u.email || "?").slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate font-bold">{u.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{u.email}</p></div></div></td>
+                      <td className="py-3 text-xs" style={{ color: SUB }}>{priceForMonth(u, CM) ? RM(priceForMonth(u, CM)) : "—"}</td>
                       <td className="py-3 text-xs" style={{ color: SUB }}>{u.createdAt || "-"}</td>
                       <td className="py-3"><Pill tone={open ? "green" : "amber"}>{open ? "Aktif" : "Belum bayar"}</Pill></td>
                     </tr>
@@ -613,7 +629,6 @@ function AffiliateModal({ au, users, onClose, onSave }) {
   const [code, setCode] = useState(a.code || "");
   const [percent, setPercent] = useState(a.percent != null ? String(a.percent) : "20");
   const [type, setType] = useState(a.type || "monthly");
-  const [price, setPrice] = useState(a.price != null ? String(a.price) : "29");
   const gen = () => setCode(((au.name || "AFF").replace(/[^A-Za-z]/g, "").slice(0, 5).toUpperCase() || "AFF") + Math.floor(1000 + Math.random() * 9000));
   const link = (typeof window !== "undefined" ? window.location.origin : "") + "/?ref=" + (code || "CODE");
   const refCount = users.filter((u) => (u.referredBy || "").toUpperCase() === (code || "").toUpperCase() && code).length;
@@ -637,10 +652,7 @@ function AffiliateModal({ au, users, onClose, onSave }) {
               <button onClick={gen} className="shrink-0 rounded-xl border px-3 py-2.5 text-xs font-bold" style={{ borderColor: "#EEF0F4", color: PURPLE }}>Jana</button>
             </div>
           </Field>
-          <div className="grid grid-cols-2 gap-3">
-            <Field label="Peratus Komisen (%)"><Input type="number" value={percent} onChange={setPercent} placeholder="cth: 20" /></Field>
-            <Field label="Harga Langganan (RM/bulan)"><Input type="number" value={price} onChange={setPrice} placeholder="cth: 29" /></Field>
-          </div>
+          <Field label="Peratus Komisen (%)"><Input type="number" value={percent} onChange={setPercent} placeholder="cth: 20" /></Field>
           <Field label="Jenis Komisen">
             <div className="flex gap-1.5">
               <button onClick={() => setType("oneoff")} className="flex-1 rounded-xl border px-2 py-2.5 text-xs font-bold" style={type === "oneoff" ? { background: PURPLE, color: "#fff", borderColor: PURPLE } : { borderColor: "#EEF0F4", color: SUB }}>One-off (sekali)</button>
@@ -653,13 +665,13 @@ function AffiliateModal({ au, users, onClose, onSave }) {
               <button onClick={() => { try { navigator.clipboard.writeText(link); } catch (e) {} }} className="shrink-0 rounded-xl px-3 py-2.5 text-xs font-bold text-white" style={{ background: PURPLE }}>Salin</button>
             </div>
           </Field>
-          <div className="rounded-xl p-3 text-xs" style={{ background: LAV, color: "#475569" }}>Jumlah rujukan setakat ini: <b style={{ color: PURPLE }}>{refCount}</b> user · Komisen: <b>{percent || 0}%</b> ({type === "oneoff" ? "sekali" : "bulanan"})</div>
+          <div className="rounded-xl p-3 text-xs" style={{ background: LAV, color: "#475569" }}>Jumlah rujukan setakat ini: <b style={{ color: PURPLE }}>{refCount}</b> user · Komisen: <b>{percent || 0}%</b> ({type === "oneoff" ? "sekali" : "bulanan"})<br/>Harga langganan ditetapkan pada setiap user (ikon kalendar Langganan).</div>
         </div>
       )}
 
       <div className="mt-5 flex items-center gap-2">
         <button onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Batal</button>
-        <button onClick={() => { onSave({ enabled, code: (code || "").toUpperCase(), percent: Number(percent || 0), type, price: Number(price || 0) }); onClose(); }} className="ml-auto inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><CheckCircle2 size={16} /> Simpan</button>
+        <button onClick={() => { onSave({ enabled, code: (code || "").toUpperCase(), percent: Number(percent || 0), type }); onClose(); }} className="ml-auto inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><CheckCircle2 size={16} /> Simpan</button>
       </div>
     </Modal>
   );
@@ -842,6 +854,8 @@ export default function HostIncome() {
   function setUserBilling(uid, month, val) { fb.current.update(fb.current.usersPath(uid), { ["billing/" + month]: val }); flash(val === "open" ? "Langganan dibuka." : "Langganan ditutup."); }
   function setUserBillingMulti(uid, patch) { const up = {}; Object.entries(patch).forEach(([m, v]) => { up["billing/" + m] = v; }); fb.current.update(fb.current.usersPath(uid), up); flash("Langganan dikemaskini."); }
   function setUserAffiliate(uid, obj) { fb.current.update(fb.current.usersPath(uid), { affiliate: obj }); flash("Tetapan affiliate disimpan."); }
+  function setUserSubPrice(uid, val) { fb.current.update(fb.current.usersPath(uid), { subPrice: Number(val || 0) }); flash("Harga asas disimpan."); }
+  function setUserMonthPrice(uid, month, val) { const v = (val === "" || val == null) ? null : Number(val); fb.current.update(fb.current.usersPath(uid), { ["prices/" + month]: v }); flash("Harga bulan dikemaskini."); }
   function deleteUserRecord(uid) { fb.current.remove(fb.current.usersPath(uid)); fb.current.remove(fb.current.ref(fb.current.database, `${FB_ROOT}/data/${uid}`)); flash("Rekod & data dipadam."); }
 
   const data = useMemo(() => deriveAll(sessions, brands, claims), [sessions, brands, claims]);
@@ -944,7 +958,7 @@ export default function HostIncome() {
     ...(isAffiliate && !isAdmin ? [{ id: "affiliate", label: "Affiliate", Icon: Share2 }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, deleteUserRecord, resendVerification, reloadUser };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser };
 
   if (USE_FB && !demo) {
     if (!authReady) return <FullLoader text="Memuatkan…" />;
