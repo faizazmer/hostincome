@@ -286,11 +286,13 @@ function AuthScreen({ onLogin, onRegister, onDemo }) {
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [refCode, setRefCode] = useState("");
+  useEffect(() => { try { const r = new URLSearchParams(window.location.search).get("ref"); if (r) { setRefCode(r.toUpperCase()); setMode("register"); } } catch (e) {} }, []);
   async function submit() {
     setErr(""); setBusy(true);
     try {
       if (mode === "login") await onLogin(email.trim(), pw);
-      else await onRegister(email.trim(), pw, name.trim());
+      else await onRegister(email.trim(), pw, name.trim(), refCode.trim() || null);
     } catch (e) { setErr(prettyAuthErr(e)); setBusy(false); }
   }
   return (
@@ -305,6 +307,7 @@ function AuthScreen({ onLogin, onRegister, onDemo }) {
           {mode === "register" && <Field label="Nama"><Input value={name} onChange={setName} placeholder="Nama anda" /></Field>}
           <Field label="Email"><Input value={email} onChange={setEmail} placeholder="nama@email.com" /></Field>
           <Field label="Kata Laluan"><Input type="password" value={pw} onChange={setPw} placeholder="Minimum 6 aksara" /></Field>
+          {mode === "register" && <Field label="Kod Referral (pilihan)"><Input value={refCode} onChange={(v) => setRefCode(v.toUpperCase())} placeholder="cth: FAIZ1234" /></Field>}
           {err && <p className="text-xs font-semibold" style={{ color: "#DC2626" }}>{err}</p>}
           <button disabled={busy} onClick={submit} className="mt-1 flex items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white transition-all" style={{ background: busy ? "#CBD5E1" : "linear-gradient(135deg,#7C3AED,#6D28D9)", boxShadow: busy ? "none" : "0 8px 18px rgba(109,40,217,0.28)" }}>
             {busy ? "Sebentar…" : (mode === "login" ? <><LogIn size={16} /> Log Masuk</> : <><UserPlus size={16} /> Daftar</>)}
@@ -414,9 +417,10 @@ function Tutorial({ onDone, setPage }) {
   );
 }
 function AdminPage({ ctx }) {
-  const { users, authUser, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, deleteUserRecord } = ctx;
+  const { users, authUser, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, deleteUserRecord } = ctx;
   const [q, setQ] = useState("");
   const [billUid, setBillUid] = useState(null);
+  const [affUid, setAffUid] = useState(null);
   const [billYear, setBillYear] = useState(TODAY.getFullYear());
   const MON = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
   const CM = monthKey();
@@ -468,6 +472,7 @@ function AdminPage({ ctx }) {
                           {u.status === "pending" && <button onClick={() => setUserStatus(u.uid, "active")} className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-white" style={{ background: "#16A34A" }}>Luluskan</button>}
                           {u.status === "active" && <button onClick={() => setUserStatus(u.uid, "suspended")} className="rounded-lg border px-2.5 py-1.5 text-xs font-bold" style={{ borderColor: "#FECACA", color: "#DC2626" }}>Gantung</button>}
                           {u.status === "suspended" && <button onClick={() => setUserStatus(u.uid, "active")} className="rounded-lg border px-2.5 py-1.5 text-xs font-bold" style={{ borderColor: "#BBF7D0", color: "#15803D" }}>Aktifkan</button>}
+                          <button onClick={() => setAffUid(u.uid)} title="Affiliate" className="rounded-lg border px-2 py-1.5" style={{ borderColor: (u.affiliate && u.affiliate.enabled) ? "#BBF7D0" : "#EEF0F4" }}><Share2 size={13} style={{ color: (u.affiliate && u.affiliate.enabled) ? "#15803D" : PURPLE }} /></button>
                           <button onClick={() => { if (confirm("Padam rekod & data user ini? (Akaun login kekal — perlu Admin SDK untuk padam penuh)")) deleteUserRecord(u.uid); }} className="rounded-lg border px-2 py-1.5" style={{ borderColor: "#EEF0F4" }}><Trash2 size={13} style={{ color: "#DC2626" }} /></button>
                         </div>
                       )}
@@ -516,7 +521,67 @@ function AdminPage({ ctx }) {
           </Modal>
         );
       })()}
+
+      {(() => {
+        const au = users.find((u) => u.uid === affUid); if (!au) return null;
+        return <AffiliateModal au={au} users={users} onClose={() => setAffUid(null)} onSave={(obj) => { setUserAffiliate(au.uid, obj); }} />;
+      })()}
     </>
+  );
+}
+function AffiliateModal({ au, users, onClose, onSave }) {
+  const a = au.affiliate || {};
+  const [enabled, setEnabled] = useState(!!a.enabled);
+  const [code, setCode] = useState(a.code || "");
+  const [percent, setPercent] = useState(a.percent != null ? String(a.percent) : "20");
+  const [type, setType] = useState(a.type || "monthly");
+  const gen = () => setCode(((au.name || "AFF").replace(/[^A-Za-z]/g, "").slice(0, 5).toUpperCase() || "AFF") + Math.floor(1000 + Math.random() * 9000));
+  const link = (typeof window !== "undefined" ? window.location.origin : "") + "/?ref=" + (code || "CODE");
+  const refCount = users.filter((u) => (u.referredBy || "").toUpperCase() === (code || "").toUpperCase() && code).length;
+  return (
+    <Modal onClose={onClose}>
+      <div className="mb-4 flex items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(au.name || au.email || "?").slice(0, 2).toUpperCase()}</div>
+        <div className="min-w-0"><p className="truncate text-base font-bold">Affiliate — {au.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{au.email}</p></div>
+      </div>
+
+      <button onClick={() => { const v = !enabled; setEnabled(v); if (v && !code) gen(); }} className="mb-4 flex w-full items-center justify-between rounded-xl border p-3" style={{ borderColor: enabled ? "#BBF7D0" : "#EEF0F4", background: enabled ? "#F0FDF4" : "#fff" }}>
+        <span className="flex items-center gap-2 text-sm font-bold"><Share2 size={16} style={{ color: enabled ? "#15803D" : SUB }} /> Aktifkan Affiliate untuk user ini</span>
+        <span className="flex h-6 w-11 items-center rounded-full p-0.5 transition-all" style={{ background: enabled ? "#16A34A" : "#E4E0F5" }}><span className="h-5 w-5 rounded-full bg-white transition-all" style={{ transform: enabled ? "translateX(20px)" : "none" }} /></span>
+      </button>
+
+      {enabled && (
+        <div className="flex flex-col gap-3">
+          <Field label="Kod Referral">
+            <div className="flex items-center gap-2">
+              <Input value={code} onChange={(v) => setCode(v.toUpperCase())} placeholder="cth: FAIZ1234" />
+              <button onClick={gen} className="shrink-0 rounded-xl border px-3 py-2.5 text-xs font-bold" style={{ borderColor: "#EEF0F4", color: PURPLE }}>Jana</button>
+            </div>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Peratus Komisen (%)"><Input type="number" value={percent} onChange={setPercent} placeholder="cth: 20" /></Field>
+            <Field label="Jenis Komisen">
+              <div className="flex gap-1.5">
+                <button onClick={() => setType("oneoff")} className="flex-1 rounded-xl border px-2 py-2.5 text-xs font-bold" style={type === "oneoff" ? { background: PURPLE, color: "#fff", borderColor: PURPLE } : { borderColor: "#EEF0F4", color: SUB }}>One-off</button>
+                <button onClick={() => setType("monthly")} className="flex-1 rounded-xl border px-2 py-2.5 text-xs font-bold" style={type === "monthly" ? { background: PURPLE, color: "#fff", borderColor: PURPLE } : { borderColor: "#EEF0F4", color: SUB }}>Bulanan</button>
+              </div>
+            </Field>
+          </div>
+          <Field label="Link Affiliate (untuk dikongsi)">
+            <div className="flex items-center gap-2">
+              <input readOnly value={link} className="min-w-0 flex-1 rounded-xl border px-3 py-2.5 text-xs outline-none" style={{ borderColor: "#E6E6EE", color: SUB }} />
+              <button onClick={() => { try { navigator.clipboard.writeText(link); } catch (e) {} }} className="shrink-0 rounded-xl px-3 py-2.5 text-xs font-bold text-white" style={{ background: PURPLE }}>Salin</button>
+            </div>
+          </Field>
+          <div className="rounded-xl p-3 text-xs" style={{ background: LAV, color: "#475569" }}>Jumlah rujukan setakat ini: <b style={{ color: PURPLE }}>{refCount}</b> user · Komisen: <b>{percent || 0}%</b> ({type === "oneoff" ? "sekali" : "bulanan"})</div>
+        </div>
+      )}
+
+      <div className="mt-5 flex items-center gap-2">
+        <button onClick={onClose} className="rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Batal</button>
+        <button onClick={() => { onSave({ enabled, code: (code || "").toUpperCase(), percent: Number(percent || 0), type }); onClose(); }} className="ml-auto inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}><CheckCircle2 size={16} /> Simpan</button>
+      </div>
+    </Modal>
   );
 }
 
@@ -605,7 +670,7 @@ export default function HostIncome() {
     return () => { if (offAuth) offAuth(); };
   }, []);
 
-  async function ensureUser(uid, email, name) {
+  async function ensureUser(uid, email, name, refCode) {
     const { get, set, usersPath } = fb.current;
     const uref = usersPath(uid);
     const snap = await get(uref);
@@ -616,6 +681,7 @@ export default function HostIncome() {
     const role = isAdminEmail ? "admin" : "host";
     const status = isAdminEmail ? "active" : "pending"; // user baru perlu kelulusan admin
     const rec = { name: name || (email || "User").split("@")[0], email, role, status, createdAt: iso(new Date()) };
+    if (refCode) rec.referredBy = String(refCode).toUpperCase();
     await set(uref, rec);
     return rec;
   }
@@ -669,11 +735,11 @@ export default function HostIncome() {
     const { signInWithEmailAndPassword } = fb.current.authMod;
     await signInWithEmailAndPassword(fb.current.auth, email, password);
   }
-  async function register(email, password, name) {
+  async function register(email, password, name, refCode) {
     const { createUserWithEmailAndPassword, updateProfile } = fb.current.authMod;
     const cred = await createUserWithEmailAndPassword(fb.current.auth, email, password);
     if (name) { try { await updateProfile(cred.user, { displayName: name }); } catch (e) {} }
-    await ensureUser(cred.user.uid, email, name);
+    await ensureUser(cred.user.uid, email, name, refCode);
     try { const { sendEmailVerification } = fb.current.authMod; await sendEmailVerification(cred.user); } catch (e) {}
   }
   async function resendVerification() {
@@ -694,6 +760,7 @@ export default function HostIncome() {
   function setUserStatus(uid, status) { fb.current.update(fb.current.usersPath(uid), { status }); flash(status === "active" ? "Akaun diaktifkan." : "Akaun digantung."); }
   function setUserBilling(uid, month, val) { fb.current.update(fb.current.usersPath(uid), { ["billing/" + month]: val }); flash(val === "open" ? "Langganan dibuka." : "Langganan ditutup."); }
   function setUserBillingMulti(uid, patch) { const up = {}; Object.entries(patch).forEach(([m, v]) => { up["billing/" + m] = v; }); fb.current.update(fb.current.usersPath(uid), up); flash("Langganan dikemaskini."); }
+  function setUserAffiliate(uid, obj) { fb.current.update(fb.current.usersPath(uid), { affiliate: obj }); flash("Tetapan affiliate disimpan."); }
   function deleteUserRecord(uid) { fb.current.remove(fb.current.usersPath(uid)); fb.current.remove(fb.current.ref(fb.current.database, `${FB_ROOT}/data/${uid}`)); flash("Rekod & data dipadam."); }
 
   const data = useMemo(() => deriveAll(sessions, brands, claims), [sessions, brands, claims]);
@@ -795,7 +862,7 @@ export default function HostIncome() {
     { id: "tetapan", label: "Tetapan", Icon: SettingsIcon },
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, deleteUserRecord, resendVerification, reloadUser };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, deleteUserRecord, resendVerification, reloadUser };
 
   if (USE_FB && !demo) {
     if (!authReady) return <FullLoader text="Memuatkan…" />;
