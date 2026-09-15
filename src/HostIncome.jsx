@@ -541,6 +541,56 @@ function AdminPage({ ctx }) {
     </>
   );
 }
+function UserSubscriptionPage({ ctx }) {
+  const { profile } = ctx;
+  const billing = (profile && profile.billing) || {};
+  const prices = (profile && profile.prices) || {};
+  const base = Number((profile && profile.subPrice) || 0);
+  const priceFor = (m) => { const p = prices[m]; return p != null ? Number(p) : base; };
+  const MON = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
+  const CM = monthKey();
+  const cmLabel = MON[TODAY.getMonth()] + " " + TODAY.getFullYear();
+  const [year, setYear] = useState(TODAY.getFullYear());
+  const openCM = billing[CM] === "open";
+  const priceCM = priceFor(CM);
+  const activeCount = Object.values(billing).filter((v) => v === "open").length;
+  const totalPaid = Object.keys(billing).filter((m) => billing[m] === "open").reduce((a, m) => a + priceFor(m), 0);
+
+  return (
+    <>
+      <PageHead title="Langganan Saya" subtitle="Status langganan, harga & sejarah bayaran anda." />
+
+      <div className="rounded-2xl p-5 text-white" style={{ background: openCM ? "linear-gradient(135deg,#16A34A,#15803D)" : "linear-gradient(135deg,#F59E0B,#DC2626)", boxShadow: "0 12px 30px rgba(0,0,0,0.15)" }}>
+        <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider opacity-90">{openCM ? <CheckCircle2 size={14} /> : <Lock size={14} />} {cmLabel}</p>
+        <p className="mt-2 text-2xl font-extrabold">{openCM ? "Langganan Aktif" : "Langganan Belum Aktif"}</p>
+        <p className="mt-1 text-sm opacity-95">{openCM ? `Terima kasih! Langganan bulan ini (RM${priceCM}) telah diaktifkan.` : `Sila bayar RM${priceCM} untuk mengaktifkan bulan ${cmLabel}. Hubungi admin untuk pembayaran.`}</p>
+      </div>
+
+      <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <StatCard theme="purple" Icon={Coins} label={`Harga ${cmLabel}`} value={RM(priceCM)} sub="bulan ini" />
+        <StatCard theme="green" Icon={CheckCircle2} label="Bulan Aktif" value={`${activeCount}`} sub="jumlah bulan dibayar" />
+        <StatCard theme="orange" Icon={Wallet} label="Jumlah Dibayar" value={RM(totalPaid)} sub="keseluruhan" />
+      </div>
+
+      <Panel className="mt-6" title="Sejarah Langganan"
+        action={<div className="flex items-center gap-2"><button onClick={() => setYear(year - 1)} className="rounded-lg border p-1.5" style={{ borderColor: "#EEF0F4" }}><ChevronLeft size={15} style={{ color: PURPLE }} /></button><span className="text-sm font-bold">{year}</span><button onClick={() => setYear(year + 1)} className="rounded-lg border p-1.5" style={{ borderColor: "#EEF0F4" }}><ChevronRight size={15} style={{ color: PURPLE }} /></button></div>}>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
+          {MON.map((mn, m) => {
+            const k = monthKey(new Date(year, m, 1)); const open = billing[k] === "open"; const isNow = k === CM; const pr = priceFor(k);
+            return (
+              <div key={k} className="rounded-xl border p-3" style={{ borderColor: open ? "#BBF7D0" : "#F1F0F6", background: open ? "#F0FDF4" : "#FAFAFB" }}>
+                <div className="flex items-center justify-between"><span className="text-sm font-bold" style={{ color: open ? "#15803D" : INK }}>{mn}{isNow && <span className="ml-1 text-[9px]" style={{ color: PURPLE }}>•kini</span>}</span>{open ? <CheckCircle2 size={15} style={{ color: "#16A34A" }} /> : <span className="h-3.5 w-3.5 rounded-full border-2" style={{ borderColor: "#E4E0F5" }} />}</div>
+                <p className="mt-1 text-xs font-semibold" style={{ color: open ? "#15803D" : SUB }}>{open ? RM(pr) : `RM${pr}`}</p>
+                <p className="text-[10px]" style={{ color: SUB }}>{open ? "Dibayar" : "Belum bayar"}</p>
+              </div>
+            );
+          })}
+        </div>
+        <p className="mt-3 text-xs" style={{ color: SUB }}>Hijau = bulan aktif (dibayar). Untuk pengaktifan / pembayaran, sila hubungi admin.</p>
+      </Panel>
+    </>
+  );
+}
 function UserAffiliatePage({ ctx }) {
   const { profile, users } = ctx;
   const a = (profile && profile.affiliate) || {};
@@ -955,6 +1005,7 @@ export default function HostIncome() {
     { id: "invoice", label: "Invoice", Icon: FileText },
     { id: "pembayaran", label: "Pembayaran", Icon: Wallet },
     { id: "tetapan", label: "Tetapan", Icon: SettingsIcon },
+    ...(!isAdmin ? [{ id: "langganan", label: "Langganan", Icon: Coins }] : []),
     ...(isAffiliate && !isAdmin ? [{ id: "affiliate", label: "Affiliate", Icon: Share2 }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
@@ -1024,6 +1075,7 @@ export default function HostIncome() {
           {page === "invoice" && <Invoice ctx={ctx} />}
           {page === "pembayaran" && <Pembayaran ctx={ctx} />}
           {page === "tetapan" && <Tetapan ctx={ctx} />}
+          {page === "langganan" && !isAdmin && <UserSubscriptionPage ctx={ctx} />}
           {page === "affiliate" && isAffiliate && <UserAffiliatePage ctx={ctx} />}
           {page === "admin" && isAdmin && <AdminPage ctx={ctx} />}
         </main>
