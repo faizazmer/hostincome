@@ -414,8 +414,10 @@ function Tutorial({ onDone, setPage }) {
   );
 }
 function AdminPage({ ctx }) {
-  const { users, authUser, setUserRole, setUserStatus, setUserBilling, deleteUserRecord } = ctx;
+  const { users, authUser, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, deleteUserRecord } = ctx;
   const [q, setQ] = useState("");
+  const [billUid, setBillUid] = useState(null);
+  const [billYear, setBillYear] = useState(TODAY.getFullYear());
   const MON = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
   const CM = monthKey();
   const cmLabel = MON[TODAY.getMonth()] + " " + TODAY.getFullYear();
@@ -452,9 +454,9 @@ function AdminPage({ ctx }) {
                       {u.role === "admin" ? <span className="text-xs" style={{ color: SUB }}>—</span> : (() => {
                         const bill = (u.billing || {})[CM] === "open" ? "open" : "close";
                         return (
-                          <div>
-                            <button onClick={() => setUserBilling(u.uid, CM, bill === "open" ? "close" : "open")} title="Klik untuk tukar buka/tutup" className="rounded-lg px-3 py-1.5 text-xs font-bold" style={bill === "open" ? { background: "#16A34A", color: "#fff" } : { background: "#FEE2E2", color: "#DC2626", border: "1px solid #FECACA" }}>{bill === "open" ? "Open" : "Close"}</button>
-                            <div className="mt-1 flex gap-1">{recent.map((r) => { const s = (u.billing || {})[r.key] === "open"; return <span key={r.key} title={r.label + (s ? " · Open" : " · Close")} className="rounded px-1 text-[9px] font-bold" style={{ background: s ? "#DCFCE7" : "#FEE2E2", color: s ? "#15803D" : "#DC2626" }}>{r.label[0]}</span>; })}</div>
+                          <div className="flex items-center gap-1.5">
+                            <button onClick={() => setUserBilling(u.uid, CM, bill === "open" ? "close" : "open")} title="Tukar buka/tutup bulan ini" className="rounded-lg px-3 py-1.5 text-xs font-bold" style={bill === "open" ? { background: "#16A34A", color: "#fff" } : { background: "#FEE2E2", color: "#DC2626", border: "1px solid #FECACA" }}>{bill === "open" ? "Open" : "Close"}</button>
+                            <button onClick={() => { setBillUid(u.uid); setBillYear(TODAY.getFullYear()); }} title="Urus semua bulan" className="rounded-lg border p-1.5" style={{ borderColor: "#EEF0F4", color: PURPLE }}><CalendarRange size={15} /></button>
                           </div>
                         );
                       })()}
@@ -476,8 +478,44 @@ function AdminPage({ ctx }) {
             </tbody>
           </table>
         </div>
-        <p className="mt-3 text-xs" style={{ color: SUB }}><b>{openCount}</b> user Open untuk {cmLabel}. Klik butang Open/Close untuk buka/tutup langganan bulan ini (Close = user disekat). Nota: "Gantung" menghalang akses serta-merta. Memadam akaun log masuk sepenuhnya perlu Firebase Admin SDK (server) — butang padam di sini hanya buang rekod & data RTDB.</p>
+        <p className="mt-3 text-xs" style={{ color: SUB }}><b>{openCount}</b> user Open untuk {cmLabel}. Klik butang Open/Close untuk bulan ini, atau ikon kalendar untuk urus semua bulan (Close = user disekat). Nota: "Gantung" menghalang akses serta-merta. Memadam akaun log masuk sepenuhnya perlu Firebase Admin SDK (server) — butang padam di sini hanya buang rekod & data RTDB.</p>
       </Panel>
+
+      {(() => {
+        const bu = users.find((u) => u.uid === billUid); if (!bu) return null;
+        const openAll = {}, closeAll = {};
+        for (let m = 0; m < 12; m++) { const k = monthKey(new Date(billYear, m, 1)); openAll[k] = "open"; closeAll[k] = "close"; }
+        return (
+          <Modal onClose={() => setBillUid(null)}>
+            <div className="mb-4 flex items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(bu.name || bu.email || "?").slice(0, 2).toUpperCase()}</div>
+              <div className="min-w-0"><p className="truncate text-base font-bold">Langganan — {bu.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{bu.email}</p></div>
+            </div>
+            <div className="mb-3 flex items-center justify-between">
+              <button onClick={() => setBillYear(billYear - 1)} className="rounded-lg border p-2" style={{ borderColor: "#EEF0F4" }}><ChevronLeft size={16} style={{ color: PURPLE }} /></button>
+              <span className="text-lg font-extrabold">{billYear}</span>
+              <button onClick={() => setBillYear(billYear + 1)} className="rounded-lg border p-2" style={{ borderColor: "#EEF0F4" }}><ChevronRight size={16} style={{ color: PURPLE }} /></button>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {MON.map((mn, m) => {
+                const k = monthKey(new Date(billYear, m, 1)); const open = (bu.billing || {})[k] === "open"; const isNow = k === CM;
+                return (
+                  <button key={k} onClick={() => setUserBilling(bu.uid, k, open ? "close" : "open")} className="flex items-center justify-between rounded-xl border px-3 py-2.5 text-sm font-bold transition-all" style={open ? { background: "#16A34A", color: "#fff", borderColor: "#16A34A" } : { background: "#fff", color: "#DC2626", borderColor: "#FECACA" }}>
+                    <span>{mn}{isNow && <span className="ml-1 text-[9px] font-bold" style={{ opacity: 0.7 }}>•kini</span>}</span>
+                    {open ? <CheckCircle2 size={16} /> : <span className="h-4 w-4 rounded-full border-2" style={{ borderColor: "#FECACA" }} />}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <button onClick={() => setUserBillingMulti(bu.uid, openAll)} className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-bold text-white" style={{ background: "#16A34A" }}><CheckCircle2 size={15} /> Buka Semua {billYear}</button>
+              <button onClick={() => setUserBillingMulti(bu.uid, closeAll)} className="inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-bold" style={{ borderColor: "#FECACA", color: "#DC2626" }}>Tutup Semua {billYear}</button>
+              <button onClick={() => setBillUid(null)} className="ml-auto rounded-xl border px-3.5 py-2 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Tutup</button>
+            </div>
+            <p className="mt-3 text-[11px]" style={{ color: SUB }}>Hijau = Open (boleh akses) · Putih = Close (disekat). Perubahan disimpan automatik.</p>
+          </Modal>
+        );
+      })()}
     </>
   );
 }
@@ -655,6 +693,7 @@ export default function HostIncome() {
   function setUserRole(uid, role) { fb.current.update(fb.current.usersPath(uid), { role }); flash("Role dikemaskini."); }
   function setUserStatus(uid, status) { fb.current.update(fb.current.usersPath(uid), { status }); flash(status === "active" ? "Akaun diaktifkan." : "Akaun digantung."); }
   function setUserBilling(uid, month, val) { fb.current.update(fb.current.usersPath(uid), { ["billing/" + month]: val }); flash(val === "open" ? "Langganan dibuka." : "Langganan ditutup."); }
+  function setUserBillingMulti(uid, patch) { const up = {}; Object.entries(patch).forEach(([m, v]) => { up["billing/" + m] = v; }); fb.current.update(fb.current.usersPath(uid), up); flash("Langganan dikemaskini."); }
   function deleteUserRecord(uid) { fb.current.remove(fb.current.usersPath(uid)); fb.current.remove(fb.current.ref(fb.current.database, `${FB_ROOT}/data/${uid}`)); flash("Rekod & data dipadam."); }
 
   const data = useMemo(() => deriveAll(sessions, brands, claims), [sessions, brands, claims]);
@@ -756,7 +795,7 @@ export default function HostIncome() {
     { id: "tetapan", label: "Tetapan", Icon: SettingsIcon },
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, deleteUserRecord, resendVerification, reloadUser };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, deleteUserRecord, resendVerification, reloadUser };
 
   if (USE_FB && !demo) {
     if (!authReady) return <FullLoader text="Memuatkan…" />;
