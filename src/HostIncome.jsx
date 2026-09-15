@@ -367,17 +367,43 @@ function PendingScreen({ email, onLogout }) {
     </div>
   );
 }
-function BillingClosedScreen({ email, onLogout, month }) {
+function BillingClosedScreen({ email, name, onLogout, month, amount, proof, onSubmitProof }) {
+  const [img, setImg] = useState(proof && proof.img ? proof.img : "");
+  const waMsg = `Hi admin, saya ${name || email} ingin bayar langganan HostIncome untuk bulan ${month} (RM${amount}). Ini bukti pembayaran saya:`;
+  const waHref = `https://wa.me/${PAY_CONFIG.whatsapp}?text=${encodeURIComponent(waMsg)}`;
+  const status = proof && proof.status;
   return (
     <div style={{ background: "#F8FAFC", minHeight: "100vh", fontFamily: "Inter, system-ui, sans-serif", color: INK }} className="flex items-center justify-center p-4">
-      <div className="w-full max-w-sm rounded-3xl border bg-white p-7 text-center shadow-xl" style={{ borderColor: "#EEF0F4" }}>
-        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: "#FEE2E2" }}><Lock size={22} style={{ color: "#DC2626" }} /></span>
-        <h1 className="mt-4 text-lg font-bold">Langganan Belum Aktif</h1>
-        <p className="mt-1 text-sm" style={{ color: SUB }}>Langganan untuk bulan <b>{month}</b> bagi akaun <b>{email}</b> belum diaktifkan. Sila hubungi admin untuk pengaktifan / pembayaran. Halaman ini akan terbuka automatik sebaik diaktifkan.</p>
-        <div className="mt-5 flex justify-center gap-2">
-          <button onClick={() => window.location.reload()} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}>Muat Semula</button>
-          <button onClick={onLogout} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: PURPLE }}><LogOut size={15} /> Log Keluar</button>
+      <div className="w-full max-w-md rounded-3xl border bg-white p-7 shadow-xl" style={{ borderColor: "#EEF0F4" }}>
+        <div className="text-center">
+          <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: "#FEE2E2" }}><Lock size={22} style={{ color: "#DC2626" }} /></span>
+          <h1 className="mt-4 text-lg font-bold">Langganan Belum Aktif</h1>
+          <p className="mt-1 text-sm" style={{ color: SUB }}>Langganan bulan <b>{month}</b> berjumlah <b>RM{amount}</b>. Sila buat pembayaran & hantar bukti untuk pengaktifan.</p>
         </div>
+
+        {status === "pending" ? (
+          <div className="mt-5 rounded-xl p-4 text-center" style={{ background: "#FEF3C7" }}>
+            <p className="flex items-center justify-center gap-2 text-sm font-bold" style={{ color: "#B45309" }}><CircleDashed size={16} /> Bukti dihantar — menunggu pengesahan admin</p>
+            {proof.img && <img src={proof.img} alt="bukti" className="mx-auto mt-3 max-h-40 rounded-lg border" style={{ borderColor: "#F1F0F6" }} />}
+          </div>
+        ) : (
+          <>
+            <div className="mt-5 rounded-xl border p-4" style={{ borderColor: "#EEF0F4", background: "#FCFBFE" }}>
+              <p className="text-xs font-bold" style={{ color: SUB }}>Maklumat Pembayaran</p>
+              <p className="mt-1 text-sm font-bold">{PAY_CONFIG.bankName} · {PAY_CONFIG.bankAccount}</p>
+              <p className="text-xs" style={{ color: SUB }}>a/n {PAY_CONFIG.bankHolder}</p>
+              <p className="mt-2 text-[11px]" style={{ color: SUB }}>{PAY_CONFIG.note}</p>
+            </div>
+            <a href={waHref} target="_blank" rel="noreferrer" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white" style={{ background: "#16A34A" }}><Share2 size={16} /> Bayar / Hubungi via WhatsApp</a>
+            <div className="mt-4">
+              <p className="mb-1.5 text-xs font-bold" style={{ color: SUB }}>Muat Naik Bukti Pembayaran</p>
+              <ImageUpload value={img} onChange={setImg} label="Pilih Gambar Resit" size={64} fallback={<ImageIcon size={20} />} bg="#7C3AED" />
+              <button disabled={!img} onClick={() => onSubmitProof(img)} className="mt-3 w-full rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-40" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}>Hantar Bukti untuk Pengesahan</button>
+            </div>
+          </>
+        )}
+
+        <button onClick={onLogout} className="mt-5 flex w-full items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: PURPLE }}><LogOut size={15} /> Log Keluar</button>
       </div>
     </div>
   );
@@ -486,53 +512,7 @@ function AdminPage({ ctx }) {
         <p className="mt-3 text-xs" style={{ color: SUB }}><b>{openCount}</b> user Open untuk {cmLabel}. Klik butang Open/Close untuk bulan ini, atau ikon kalendar untuk urus semua bulan (Close = user disekat). Nota: "Gantung" menghalang akses serta-merta. Memadam akaun log masuk sepenuhnya perlu Firebase Admin SDK (server) — butang padam di sini hanya buang rekod & data RTDB.</p>
       </Panel>
 
-      {(() => {
-        const bu = users.find((u) => u.uid === billUid); if (!bu) return null;
-        const openAll = {}, closeAll = {};
-        for (let m = 0; m < 12; m++) { const k = monthKey(new Date(billYear, m, 1)); openAll[k] = "open"; closeAll[k] = "close"; }
-        return (
-          <Modal onClose={() => setBillUid(null)}>
-            <div className="mb-4 flex items-center gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(bu.name || bu.email || "?").slice(0, 2).toUpperCase()}</div>
-              <div className="min-w-0"><p className="truncate text-base font-bold">Langganan — {bu.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{bu.email}</p></div>
-            </div>
-            <div className="mb-3 rounded-xl border p-3" style={{ borderColor: "#E4E0F5", background: "#FCFBFE" }}>
-              <p className="mb-1 text-xs font-bold" style={{ color: SUB }}>Harga Asas (RM/bulan) — default</p>
-              <input key={bu.uid} type="number" defaultValue={bu.subPrice != null ? bu.subPrice : ""} onBlur={(e) => setUserSubPrice(bu.uid, e.target.value)} placeholder="cth: 29" className="w-40 rounded-xl border px-3 py-2 text-sm font-bold outline-none" style={{ borderColor: "#E6E6EE" }} />
-              <p className="mt-1 text-[11px]" style={{ color: SUB }}>Digunakan untuk bulan tanpa harga khas. Anda boleh set harga promo berbeza pada bulan tertentu di bawah (cth bulan pertama murah).</p>
-            </div>
-            <div className="mb-3 flex items-center justify-between">
-              <button onClick={() => setBillYear(billYear - 1)} className="rounded-lg border p-2" style={{ borderColor: "#EEF0F4" }}><ChevronLeft size={16} style={{ color: PURPLE }} /></button>
-              <span className="text-lg font-extrabold">{billYear}</span>
-              <button onClick={() => setBillYear(billYear + 1)} className="rounded-lg border p-2" style={{ borderColor: "#EEF0F4" }}><ChevronRight size={16} style={{ color: PURPLE }} /></button>
-            </div>
-            <div className="grid grid-cols-3 gap-2">
-              {MON.map((mn, m) => {
-                const k = monthKey(new Date(billYear, m, 1)); const open = (bu.billing || {})[k] === "open"; const isNow = k === CM;
-                const mp = (bu.prices || {})[k];
-                return (
-                  <div key={k} className="rounded-xl border p-2" style={{ borderColor: open ? "#BBF7D0" : "#EEF0F4", background: open ? "#F0FDF4" : "#fff" }}>
-                    <button onClick={() => setUserBilling(bu.uid, k, open ? "close" : "open")} className="flex w-full items-center justify-between text-sm font-bold" style={{ color: open ? "#15803D" : "#DC2626" }}>
-                      <span>{mn}{isNow && <span className="ml-1 text-[9px]" style={{ opacity: 0.7 }}>•kini</span>}</span>
-                      {open ? <CheckCircle2 size={15} /> : <span className="h-4 w-4 rounded-full border-2" style={{ borderColor: "#FECACA" }} />}
-                    </button>
-                    <div className="mt-1.5 flex items-center gap-1 rounded-lg border px-1.5" style={{ borderColor: "#EEF0F4", background: "#fff" }}>
-                      <span className="text-[10px]" style={{ color: SUB }}>RM</span>
-                      <input type="number" defaultValue={mp != null ? mp : ""} placeholder={bu.subPrice != null ? String(bu.subPrice) : "0"} onBlur={(e) => setUserMonthPrice(bu.uid, k, e.target.value)} className="w-full bg-transparent py-1 text-xs font-semibold outline-none" />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-2">
-              <button onClick={() => setUserBillingMulti(bu.uid, openAll)} className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-bold text-white" style={{ background: "#16A34A" }}><CheckCircle2 size={15} /> Buka Semua {billYear}</button>
-              <button onClick={() => setUserBillingMulti(bu.uid, closeAll)} className="inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-bold" style={{ borderColor: "#FECACA", color: "#DC2626" }}>Tutup Semua {billYear}</button>
-              <button onClick={() => setBillUid(null)} className="ml-auto rounded-xl border px-3.5 py-2 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Tutup</button>
-            </div>
-            <p className="mt-3 text-[11px]" style={{ color: SUB }}>Hijau = Open (boleh akses) · Putih = Close (disekat). Perubahan disimpan automatik.</p>
-          </Modal>
-        );
-      })()}
+      {billUid && (() => { const bu = users.find((u) => u.uid === billUid); return bu ? <BillingModal bu={bu} ctx={ctx} onClose={() => setBillUid(null)} /> : null; })()}
 
       {(() => {
         const au = users.find((u) => u.uid === affUid); if (!au) return null;
@@ -570,6 +550,14 @@ function UserSubscriptionPage({ ctx }) {
         <StatCard theme="purple" Icon={Coins} label={`Harga ${cmLabel}`} value={RM(priceCM)} sub="bulan ini" />
         <StatCard theme="green" Icon={CheckCircle2} label="Bulan Aktif" value={`${activeCount}`} sub="jumlah bulan dibayar" />
         <StatCard theme="orange" Icon={Wallet} label="Jumlah Dibayar" value={RM(totalPaid)} sub="keseluruhan" />
+      </div>
+
+      <div className="mt-5 flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between" style={{ borderColor: "#EEF0F4", background: "#FCFBFE" }}>
+        <div>
+          <p className="text-xs font-bold" style={{ color: SUB }}>Maklumat Pembayaran</p>
+          <p className="mt-0.5 text-sm font-bold">{PAY_CONFIG.bankName} · {PAY_CONFIG.bankAccount} <span className="font-normal" style={{ color: SUB }}>(a/n {PAY_CONFIG.bankHolder})</span></p>
+        </div>
+        <a href={`https://wa.me/${PAY_CONFIG.whatsapp}?text=${encodeURIComponent(`Hi admin, saya ${(profile && profile.name) || ""} nak bayar langganan HostIncome.`)}`} target="_blank" rel="noreferrer" className="inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ background: "#16A34A" }}><Share2 size={16} /> Hubungi / Bayar (WhatsApp)</a>
       </div>
 
       <Panel className="mt-6" title="Sejarah Langganan"
@@ -673,6 +661,78 @@ function UserAffiliatePage({ ctx }) {
     </>
   );
 }
+function BillingModal({ bu, ctx, onClose }) {
+  const { setUserBilling, setUserBillingMulti, setUserSubPrice, setUserMonthPrice, fetchPayProofs, approvePayment, rejectPayment } = ctx;
+  const MON = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
+  const CM = monthKey();
+  const [billYear, setBillYear] = useState(TODAY.getFullYear());
+  const [proofs, setProofs] = useState({});
+  const loadProofs = () => fetchPayProofs(bu.uid).then(setProofs);
+  useEffect(() => { loadProofs(); }, [bu.uid]);
+  const openAll = {}, closeAll = {};
+  for (let m = 0; m < 12; m++) { const k = monthKey(new Date(billYear, m, 1)); openAll[k] = "open"; closeAll[k] = "close"; }
+  const pendingProofs = Object.entries(proofs).filter(([m, p]) => p && p.status === "pending").sort();
+  return (
+    <Modal onClose={onClose}>
+      <div className="mb-4 flex items-center gap-3">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(bu.name || bu.email || "?").slice(0, 2).toUpperCase()}</div>
+        <div className="min-w-0"><p className="truncate text-base font-bold">Langganan — {bu.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{bu.email}</p></div>
+      </div>
+
+      {pendingProofs.length > 0 && (
+        <div className="mb-4 rounded-xl border p-3" style={{ borderColor: "#FDE68A", background: "#FFFBEB" }}>
+          <p className="mb-2 flex items-center gap-1.5 text-xs font-bold" style={{ color: "#B45309" }}><CircleDashed size={14} /> Bukti Pembayaran Menunggu ({pendingProofs.length})</p>
+          <div className="flex flex-col gap-2">
+            {pendingProofs.map(([m, p]) => (
+              <div key={m} className="rounded-lg border bg-white p-2" style={{ borderColor: "#F1F0F6" }}>
+                <div className="flex items-center justify-between"><span className="text-sm font-bold">{m} · RM{p.amount || 0}</span><span className="text-[10px]" style={{ color: SUB }}>{p.at ? String(p.at).slice(0, 10) : ""}</span></div>
+                {p.img && <a href={p.img} target="_blank" rel="noreferrer"><img src={p.img} alt="bukti" className="mt-2 max-h-48 w-full rounded-lg border object-contain" style={{ borderColor: "#F1F0F6" }} /></a>}
+                <div className="mt-2 flex gap-2">
+                  <button onClick={() => { approvePayment(bu.uid, m); setTimeout(loadProofs, 500); }} className="flex-1 rounded-lg py-2 text-xs font-bold text-white" style={{ background: "#16A34A" }}>Approve &amp; Buka {m}</button>
+                  <button onClick={() => { rejectPayment(bu.uid, m); setTimeout(loadProofs, 500); }} className="rounded-lg border px-3 py-2 text-xs font-bold" style={{ borderColor: "#FECACA", color: "#DC2626" }}>Tolak</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mb-3 rounded-xl border p-3" style={{ borderColor: "#E4E0F5", background: "#FCFBFE" }}>
+        <p className="mb-1 text-xs font-bold" style={{ color: SUB }}>Harga Asas (RM/bulan) — default</p>
+        <input key={bu.uid} type="number" defaultValue={bu.subPrice != null ? bu.subPrice : ""} onBlur={(e) => setUserSubPrice(bu.uid, e.target.value)} placeholder="cth: 29" className="w-40 rounded-xl border px-3 py-2 text-sm font-bold outline-none" style={{ borderColor: "#E6E6EE" }} />
+        <p className="mt-1 text-[11px]" style={{ color: SUB }}>Digunakan untuk bulan tanpa harga khas. Set harga promo berbeza pada bulan tertentu di bawah.</p>
+      </div>
+      <div className="mb-3 flex items-center justify-between">
+        <button onClick={() => setBillYear(billYear - 1)} className="rounded-lg border p-2" style={{ borderColor: "#EEF0F4" }}><ChevronLeft size={16} style={{ color: PURPLE }} /></button>
+        <span className="text-lg font-extrabold">{billYear}</span>
+        <button onClick={() => setBillYear(billYear + 1)} className="rounded-lg border p-2" style={{ borderColor: "#EEF0F4" }}><ChevronRight size={16} style={{ color: PURPLE }} /></button>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {MON.map((mn, m) => {
+          const k = monthKey(new Date(billYear, m, 1)); const open = (bu.billing || {})[k] === "open"; const isNow = k === CM; const mp = (bu.prices || {})[k];
+          return (
+            <div key={k} className="rounded-xl border p-2" style={{ borderColor: open ? "#BBF7D0" : "#EEF0F4", background: open ? "#F0FDF4" : "#fff" }}>
+              <button onClick={() => setUserBilling(bu.uid, k, open ? "close" : "open")} className="flex w-full items-center justify-between text-sm font-bold" style={{ color: open ? "#15803D" : "#DC2626" }}>
+                <span>{mn}{isNow && <span className="ml-1 text-[9px]" style={{ opacity: 0.7 }}>•kini</span>}</span>
+                {open ? <CheckCircle2 size={15} /> : <span className="h-4 w-4 rounded-full border-2" style={{ borderColor: "#FECACA" }} />}
+              </button>
+              <div className="mt-1.5 flex items-center gap-1 rounded-lg border px-1.5" style={{ borderColor: "#EEF0F4", background: "#fff" }}>
+                <span className="text-[10px]" style={{ color: SUB }}>RM</span>
+                <input type="number" defaultValue={mp != null ? mp : ""} placeholder={bu.subPrice != null ? String(bu.subPrice) : "0"} onBlur={(e) => setUserMonthPrice(bu.uid, k, e.target.value)} className="w-full bg-transparent py-1 text-xs font-semibold outline-none" />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex flex-wrap items-center gap-2">
+        <button onClick={() => setUserBillingMulti(bu.uid, openAll)} className="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-bold text-white" style={{ background: "#16A34A" }}><CheckCircle2 size={15} /> Buka Semua {billYear}</button>
+        <button onClick={() => setUserBillingMulti(bu.uid, closeAll)} className="inline-flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-sm font-bold" style={{ borderColor: "#FECACA", color: "#DC2626" }}>Tutup Semua {billYear}</button>
+        <button onClick={onClose} className="ml-auto rounded-xl border px-3.5 py-2 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Tutup</button>
+      </div>
+      <p className="mt-3 text-[11px]" style={{ color: SUB }}>Hijau = Open (boleh akses) · Putih = Close (disekat). Perubahan disimpan automatik.</p>
+    </Modal>
+  );
+}
 function AffiliateModal({ au, users, onClose, onSave }) {
   const a = au.affiliate || {};
   const [enabled, setEnabled] = useState(!!a.enabled);
@@ -746,6 +806,14 @@ const USE_FB = !!FIREBASE_CONFIG.databaseURL;
 const FB_ROOT = "hostincome";
 // Email yang auto jadi admin. Pengguna PERTAMA yang daftar juga auto-admin.
 const ADMIN_EMAILS = [];
+// Maklumat pembayaran (EDIT ikut anda). whatsapp: nombor tanpa '+' atau '0' awalan negara, cth Malaysia "60123456789".
+const PAY_CONFIG = {
+  whatsapp: "60123456789",
+  bankName: "Maybank",
+  bankAccount: "1234567890",
+  bankHolder: "HostIncome",
+  note: "Sila hantar bukti pembayaran melalui WhatsApp atau muat naik di bawah.",
+};
 
 const DEFAULT_SETTINGS = {
   hostName: "Nur Aisyah",
@@ -774,6 +842,7 @@ export default function HostIncome() {
   const [profile, setProfile] = useState(null);      // { name, email, role, status, createdAt }
   const [users, setUsers] = useState([]);            // admin: semua pengguna
   const [demo, setDemo] = useState(false);
+  const [payProof, setPayProof] = useState({});
   const fb = useRef(null);
   const [toast, setToast] = useState(null);
   function flash(msg) { setToast(msg); setTimeout(() => setToast(null), 2600); }
@@ -857,6 +926,7 @@ export default function HostIncome() {
       offs.push(onValue(p("sessions"), (s) => setSessions(toArr(s.val()))));
       offs.push(onValue(p("claims"), (s) => setClaims(toArr(s.val()).map((c) => ({ ...c, sessionIds: c.sessionIds || [] })))));
       offs.push(onValue(p("settings"), (s) => { const v = s.val(); if (v) setSettings(v); }));
+      offs.push(onValue(p("payProof"), (s) => setPayProof(s.val() || {})));
       fb.current.path = (x) => dataPath(uid, x);
       setCloud(true); setLoading(false);
     })();
@@ -896,7 +966,7 @@ export default function HostIncome() {
   }
   async function logout() {
     try { const { signOut } = fb.current.authMod; await signOut(fb.current.auth); } catch (e) {}
-    setProfile(null); setCloud(false); setBrands([]); setSessions([]); setClaims([]); setPage("dashboard");
+    setProfile(null); setCloud(false); setBrands([]); setSessions([]); setClaims([]); setPayProof({}); setPage("dashboard");
   }
   // --- Admin actions ---
   function setUserRole(uid, role) { fb.current.update(fb.current.usersPath(uid), { role }); flash("Role dikemaskini."); }
@@ -906,6 +976,14 @@ export default function HostIncome() {
   function setUserAffiliate(uid, obj) { fb.current.update(fb.current.usersPath(uid), { affiliate: obj }); flash("Tetapan affiliate disimpan."); }
   function setUserSubPrice(uid, val) { fb.current.update(fb.current.usersPath(uid), { subPrice: Number(val || 0) }); flash("Harga asas disimpan."); }
   function setUserMonthPrice(uid, month, val) { const v = (val === "" || val == null) ? null : Number(val); fb.current.update(fb.current.usersPath(uid), { ["prices/" + month]: v }); flash("Harga bulan dikemaskini."); }
+  function submitPayProof(month, img, amount) {
+    if (!fb.current || !fb.current.path) { flash("Tidak dapat menghantar bukti sekarang."); return; }
+    fb.current.set(fb.current.path(`payProof/${month}`), { img: img || "", amount: Number(amount || 0), at: iso(new Date()), status: "pending" });
+    flash("Bukti pembayaran dihantar. Menunggu pengesahan admin.");
+  }
+  async function fetchPayProofs(uid) { try { const s = await fb.current.get(fb.current.dataPath(uid, "payProof")); return s.val() || {}; } catch (e) { return {}; } }
+  function approvePayment(uid, month) { fb.current.update(fb.current.dataPath(uid, `payProof/${month}`), { status: "approved" }); setUserBilling(uid, month, "open"); }
+  function rejectPayment(uid, month) { fb.current.update(fb.current.dataPath(uid, `payProof/${month}`), { status: "rejected" }); flash("Bukti ditolak."); }
   function deleteUserRecord(uid) { fb.current.remove(fb.current.usersPath(uid)); fb.current.remove(fb.current.ref(fb.current.database, `${FB_ROOT}/data/${uid}`)); flash("Rekod & data dipadam."); }
 
   const data = useMemo(() => deriveAll(sessions, brands, claims), [sessions, brands, claims]);
@@ -1009,7 +1087,7 @@ export default function HostIncome() {
     ...(isAffiliate && !isAdmin ? [{ id: "affiliate", label: "Affiliate", Icon: Share2 }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser, payProof, submitPayProof, fetchPayProofs, approvePayment, rejectPayment };
 
   if (USE_FB && !demo) {
     if (!authReady) return <FullLoader text="Memuatkan…" />;
@@ -1018,7 +1096,7 @@ export default function HostIncome() {
     if (authUser && !authUser.emailVerified && !isAdmin) return <VerifyEmailScreen email={authUser.email} onResend={resendVerification} onReload={reloadUser} onLogout={logout} />;
     if (profile && profile.status === "suspended") return <SuspendedScreen onLogout={logout} email={authUser.email} />;
     if (profile && profile.status === "pending") return <PendingScreen onLogout={logout} email={authUser.email} />;
-    if (profile && profile.role !== "admin" && ((profile.billing || {})[monthKey()] !== "open")) return <BillingClosedScreen email={authUser.email} onLogout={logout} month={monthKey()} />;
+    if (profile && profile.role !== "admin" && ((profile.billing || {})[monthKey()] !== "open")) { const cm = monthKey(); const amt = (profile.prices && profile.prices[cm] != null) ? profile.prices[cm] : (profile.subPrice || 0); return <BillingClosedScreen email={authUser.email} name={profile.name} month={cm} amount={amt} proof={payProof[cm]} onSubmitProof={(img) => submitPayProof(cm, img, amt)} onLogout={logout} />; }
     if (loading) return <FullLoader text="Menyambung ke data…" />;
   }
 
