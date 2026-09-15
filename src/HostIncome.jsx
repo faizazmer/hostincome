@@ -808,10 +808,10 @@ const FB_ROOT = "hostincome";
 const ADMIN_EMAILS = [];
 // Maklumat pembayaran (EDIT ikut anda). whatsapp: nombor tanpa '+' atau '0' awalan negara, cth Malaysia "60123456789".
 const PAY_CONFIG = {
-  whatsapp: "60123456789",
+  whatsapp: "601131811154",
   bankName: "Maybank",
-  bankAccount: "1234567890",
-  bankHolder: "HostIncome",
+  bankAccount: "155023403066",
+  bankHolder: "Mohamad Faiz Azmer",
   note: "Sila hantar bukti pembayaran melalui WhatsApp atau muat naik di bawah.",
 };
 
