@@ -44,6 +44,7 @@ function fmtTime(hhmm) { let [h, m] = hhmm.split(":").map(Number); const ap = h 
 function fmtTimeShort(hhmm) { let [h, m] = hhmm.split(":").map(Number); const ap = h >= 12 ? "p" : "a"; let hr = h % 12 || 12; return m ? `${hr}.${String(m).padStart(2, "0")}${ap}` : `${hr}${ap}`; }
 function RM(n) { return `RM${Number(n).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function H(n) { return parseFloat((Math.round((Number(n) || 0) * 100) / 100).toFixed(2)); }
+function monthKey(d) { const x = d || TODAY; return `${x.getFullYear()}-${pad(x.getMonth() + 1)}`; }
 function pad(n) { return String(n).padStart(2, "0"); }
 function durHours(s, e) { const a = s.split(":").map(Number), b = e.split(":").map(Number); return Math.max(0, (b[0] * 60 + b[1] - (a[0] * 60 + a[1])) / 60); }
 function brandSlug(b) { return ((b || "SESI").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 4)) || "SESI"; }
@@ -363,6 +364,21 @@ function PendingScreen({ email, onLogout }) {
     </div>
   );
 }
+function BillingClosedScreen({ email, onLogout, month }) {
+  return (
+    <div style={{ background: "#F8FAFC", minHeight: "100vh", fontFamily: "Inter, system-ui, sans-serif", color: INK }} className="flex items-center justify-center p-4">
+      <div className="w-full max-w-sm rounded-3xl border bg-white p-7 text-center shadow-xl" style={{ borderColor: "#EEF0F4" }}>
+        <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: "#FEE2E2" }}><Lock size={22} style={{ color: "#DC2626" }} /></span>
+        <h1 className="mt-4 text-lg font-bold">Langganan Belum Aktif</h1>
+        <p className="mt-1 text-sm" style={{ color: SUB }}>Langganan untuk bulan <b>{month}</b> bagi akaun <b>{email}</b> belum diaktifkan. Sila hubungi admin untuk pengaktifan / pembayaran. Halaman ini akan terbuka automatik sebaik diaktifkan.</p>
+        <div className="mt-5 flex justify-center gap-2">
+          <button onClick={() => window.location.reload()} className="inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}>Muat Semula</button>
+          <button onClick={onLogout} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: PURPLE }}><LogOut size={15} /> Log Keluar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
 function Tutorial({ onDone, setPage }) {
   const steps = [
     { icon: Activity, title: "Selamat datang ke HostIncome 👋", body: "Aplikasi untuk rekod sesi live, kira pendapatan & komisen, dan jana invois untuk setiap brand. Jom lihat 4 langkah asas." },
@@ -398,8 +414,13 @@ function Tutorial({ onDone, setPage }) {
   );
 }
 function AdminPage({ ctx }) {
-  const { users, authUser, setUserRole, setUserStatus, deleteUserRecord } = ctx;
+  const { users, authUser, setUserRole, setUserStatus, setUserBilling, deleteUserRecord } = ctx;
   const [q, setQ] = useState("");
+  const MON = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
+  const CM = monthKey();
+  const cmLabel = MON[TODAY.getMonth()] + " " + TODAY.getFullYear();
+  const recent = [0, 1, 2].map((i) => { const d = new Date(TODAY.getFullYear(), TODAY.getMonth() - i, 1); return { key: monthKey(d), label: MON[d.getMonth()] }; });
+  const openCount = users.filter((u) => u.role !== "admin" && (u.billing || {})[CM] === "open").length;
   const list = users.filter((u) => `${u.name || ""} ${u.email || ""}`.toLowerCase().includes(q.trim().toLowerCase()));
   const admins = users.filter((u) => u.role === "admin").length;
   const active = users.filter((u) => u.status === "active").length;
@@ -417,9 +438,9 @@ function AdminPage({ ctx }) {
         action={<div className="flex items-center gap-2 rounded-xl border px-3 py-2" style={{ borderColor: "#EEF0F4" }}><Search size={14} style={{ color: SUB }} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Cari nama / email…" className="w-44 text-sm outline-none" /></div>}>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead><tr className="text-left" style={{ color: SUB }}><th className="pb-3 font-semibold">User</th><th className="pb-3 font-semibold">Role</th><th className="pb-3 font-semibold">Status</th><th className="pb-3 font-semibold">Daftar</th><th className="pb-3"></th></tr></thead>
+            <thead><tr className="text-left" style={{ color: SUB }}><th className="pb-3 font-semibold">User</th><th className="pb-3 font-semibold">Role</th><th className="pb-3 font-semibold">Status</th><th className="pb-3 font-semibold">Langganan {cmLabel}</th><th className="pb-3 font-semibold">Daftar</th><th className="pb-3"></th></tr></thead>
             <tbody>
-              {list.length === 0 && <tr><td colSpan={5} className="py-6 text-center" style={{ color: SUB }}>Tiada pengguna.</td></tr>}
+              {list.length === 0 && <tr><td colSpan={6} className="py-6 text-center" style={{ color: SUB }}>Tiada pengguna.</td></tr>}
               {list.map((u) => {
                 const me = u.uid === authUser?.uid;
                 return (
@@ -427,6 +448,17 @@ function AdminPage({ ctx }) {
                     <td className="py-3"><div className="flex items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(u.name || u.email || "?").slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate font-bold">{u.name}{me && <span className="ml-1 text-[10px]" style={{ color: PURPLE }}>(anda)</span>}</p><p className="truncate text-xs" style={{ color: SUB }}>{u.email}</p></div></div></td>
                     <td className="py-3"><select value={u.role} disabled={me} onChange={(e) => setUserRole(u.uid, e.target.value)} className="rounded-lg border px-2 py-1 text-xs font-semibold outline-none" style={{ borderColor: "#EEF0F4", opacity: me ? 0.5 : 1 }}><option value="host">Host</option><option value="admin">Admin</option></select></td>
                     <td className="py-3"><Pill tone={u.status === "active" ? "green" : u.status === "pending" ? "amber" : "red"}>{u.status === "active" ? "Aktif" : u.status === "pending" ? "Menunggu" : "Digantung"}</Pill></td>
+                    <td className="py-3">
+                      {u.role === "admin" ? <span className="text-xs" style={{ color: SUB }}>—</span> : (() => {
+                        const bill = (u.billing || {})[CM] === "open" ? "open" : "close";
+                        return (
+                          <div>
+                            <button onClick={() => setUserBilling(u.uid, CM, bill === "open" ? "close" : "open")} title="Klik untuk tukar buka/tutup" className="rounded-lg px-3 py-1.5 text-xs font-bold" style={bill === "open" ? { background: "#16A34A", color: "#fff" } : { background: "#FEE2E2", color: "#DC2626", border: "1px solid #FECACA" }}>{bill === "open" ? "Open" : "Close"}</button>
+                            <div className="mt-1 flex gap-1">{recent.map((r) => { const s = (u.billing || {})[r.key] === "open"; return <span key={r.key} title={r.label + (s ? " · Open" : " · Close")} className="rounded px-1 text-[9px] font-bold" style={{ background: s ? "#DCFCE7" : "#FEE2E2", color: s ? "#15803D" : "#DC2626" }}>{r.label[0]}</span>; })}</div>
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td className="py-3 text-xs" style={{ color: SUB }}>{u.createdAt || "-"}</td>
                     <td className="py-3 text-right">
                       {!me && (
@@ -444,7 +476,7 @@ function AdminPage({ ctx }) {
             </tbody>
           </table>
         </div>
-        <p className="mt-3 text-xs" style={{ color: SUB }}>Nota: "Gantung" menghalang akses serta-merta. Memadam akaun log masuk sepenuhnya perlu Firebase Admin SDK (server) — butang padam di sini hanya buang rekod & data RTDB.</p>
+        <p className="mt-3 text-xs" style={{ color: SUB }}><b>{openCount}</b> user Open untuk {cmLabel}. Klik butang Open/Close untuk buka/tutup langganan bulan ini (Close = user disekat). Nota: "Gantung" menghalang akses serta-merta. Memadam akaun log masuk sepenuhnya perlu Firebase Admin SDK (server) — butang padam di sini hanya buang rekod & data RTDB.</p>
       </Panel>
     </>
   );
@@ -622,6 +654,7 @@ export default function HostIncome() {
   // --- Admin actions ---
   function setUserRole(uid, role) { fb.current.update(fb.current.usersPath(uid), { role }); flash("Role dikemaskini."); }
   function setUserStatus(uid, status) { fb.current.update(fb.current.usersPath(uid), { status }); flash(status === "active" ? "Akaun diaktifkan." : "Akaun digantung."); }
+  function setUserBilling(uid, month, val) { fb.current.update(fb.current.usersPath(uid), { ["billing/" + month]: val }); flash(val === "open" ? "Langganan dibuka." : "Langganan ditutup."); }
   function deleteUserRecord(uid) { fb.current.remove(fb.current.usersPath(uid)); fb.current.remove(fb.current.ref(fb.current.database, `${FB_ROOT}/data/${uid}`)); flash("Rekod & data dipadam."); }
 
   const data = useMemo(() => deriveAll(sessions, brands, claims), [sessions, brands, claims]);
@@ -723,7 +756,7 @@ export default function HostIncome() {
     { id: "tetapan", label: "Tetapan", Icon: SettingsIcon },
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, deleteUserRecord, resendVerification, reloadUser };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, deleteUserRecord, resendVerification, reloadUser };
 
   if (USE_FB && !demo) {
     if (!authReady) return <FullLoader text="Memuatkan…" />;
@@ -732,6 +765,7 @@ export default function HostIncome() {
     if (authUser && !authUser.emailVerified && !isAdmin) return <VerifyEmailScreen email={authUser.email} onResend={resendVerification} onReload={reloadUser} onLogout={logout} />;
     if (profile && profile.status === "suspended") return <SuspendedScreen onLogout={logout} email={authUser.email} />;
     if (profile && profile.status === "pending") return <PendingScreen onLogout={logout} email={authUser.email} />;
+    if (profile && profile.role !== "admin" && ((profile.billing || {})[monthKey()] !== "open")) return <BillingClosedScreen email={authUser.email} onLogout={logout} month={monthKey()} />;
     if (loading) return <FullLoader text="Menyambung ke data…" />;
   }
 
