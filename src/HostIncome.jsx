@@ -51,6 +51,18 @@ function anchorDay(u) { const c = u && u.createdAt; const d = c ? parseISO(c) : 
 function cycleKeyFor(u, ref) { const ad = anchorDay(u); const d = ref || TODAY; const eff = Math.min(ad, daysInMonth(d.getFullYear(), d.getMonth())); if (d.getDate() >= eff) return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; const p = new Date(d.getFullYear(), d.getMonth() - 1, 1); return `${p.getFullYear()}-${pad(p.getMonth() + 1)}`; }
 function cycleBounds(u, key) { const ad = anchorDay(u); const [Y, M] = key.split("-").map(Number); const m = M - 1; const sD = Math.min(ad, daysInMonth(Y, m)); const start = new Date(Y, m, sD); const nY = m === 11 ? Y + 1 : Y, nM = m === 11 ? 0 : m + 1; const nsD = Math.min(ad, daysInMonth(nY, nM)); const nextStart = new Date(nY, nM, nsD); const end = new Date(nextStart.getTime() - 86400000); return { start, end, nextStart }; }
 function cycleLabel(u, key) { const { start, end } = cycleBounds(u, key); return `${start.getDate()} ${MONTHS_MS[start.getMonth()]} – ${end.getDate()} ${MONTHS_MS[end.getMonth()]}`; }
+// Kira komisen affiliate dari senarai users (untuk paparan admin & affiliate).
+function affEarnings(aff, users) {
+  const a = aff.affiliate || {};
+  const code = (a.code || "").toUpperCase(); const percent = Number(a.percent || 0); const type = a.type || "monthly";
+  const refs = (users || []).filter((u) => (u.referredBy || "").toUpperCase() === code && code);
+  const priceForMonth = (u, m) => { const p = u.prices && u.prices[m]; return p != null ? Number(p) : Number(u.subPrice || 0); };
+  let total = 0;
+  if (type === "oneoff") { refs.forEach((u) => { const oms = Object.keys(u.billing || {}).filter((m) => u.billing[m] === "open").sort(); if (oms.length) total += priceForMonth(u, oms[0]) * percent / 100; }); }
+  else { refs.forEach((u) => { Object.keys(u.billing || {}).forEach((m) => { if (u.billing[m] === "open") total += priceForMonth(u, m) * percent / 100; }); }); }
+  const paid = Object.values(a.payouts || {}).reduce((s, p) => s + Number(p.amount || 0), 0);
+  return { code, percent, type, refCount: refs.length, total, paid, outstanding: total - paid };
+}
 function pad(n) { return String(n).padStart(2, "0"); }
 function durHours(s, e) { const a = s.split(":").map(Number), b = e.split(":").map(Number); return Math.max(0, (b[0] * 60 + b[1] - (a[0] * 60 + a[1])) / 60); }
 function brandSlug(b) { return ((b || "SESI").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 4)) || "SESI"; }
@@ -450,6 +462,76 @@ function Tutorial({ onDone, setPage }) {
     </Modal>
   );
 }
+function AffiliateCommissions({ ctx }) {
+  const { users, recordAffiliatePayout, deleteAffiliatePayout } = ctx;
+  const [payUid, setPayUid] = useState(null);
+  const [amt, setAmt] = useState("");
+  const [note, setNote] = useState("");
+  const affs = users.filter((u) => u.affiliate && u.affiliate.enabled);
+  const rows = affs.map((a) => ({ u: a, ...affEarnings(a, users) }));
+  const totalOwed = rows.reduce((s, r) => s + Math.max(0, r.outstanding), 0);
+  const payTarget = users.find((u) => u.uid === payUid);
+  const payInfo = payTarget ? affEarnings(payTarget, users) : null;
+  const payouts = payTarget ? Object.entries((payTarget.affiliate && payTarget.affiliate.payouts) || {}).sort((a, b) => (b[1].at || "").localeCompare(a[1].at || "")) : [];
+  return (
+    <Panel className="mt-6" title="Komisen Affiliate" action={<span className="rounded-lg px-2.5 py-1 text-xs font-bold" style={{ background: LAV, color: PURPLE }}>Baki perlu bayar: {RM(totalOwed)}</span>}>
+      {affs.length === 0 ? <p className="py-6 text-center text-sm" style={{ color: SUB }}>Tiada affiliate aktif. Aktifkan affiliate pada mana-mana user (ikon Share di senarai atas).</p> : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead><tr className="text-left" style={{ color: SUB }}><th className="pb-3 font-semibold">Affiliate</th><th className="pb-3 font-semibold">Kod</th><th className="pb-3 font-semibold">Rujukan</th><th className="pb-3 font-semibold">Diperoleh</th><th className="pb-3 font-semibold">Dibayar</th><th className="pb-3 font-semibold">Baki</th><th className="pb-3"></th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.u.uid} className="border-t" style={{ borderColor: "#F1F0F6" }}>
+                  <td className="py-3"><div className="flex items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(r.u.name || r.u.email || "?").slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate font-bold">{r.u.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{r.u.email}</p></div></div></td>
+                  <td className="py-3 text-xs"><span className="font-bold">{r.code || "—"}</span><br /><span style={{ color: SUB }}>{r.percent}% {r.type === "oneoff" ? "sekali" : "bulanan"}</span></td>
+                  <td className="py-3">{r.refCount}</td>
+                  <td className="py-3 font-bold">{RM(r.total)}</td>
+                  <td className="py-3 font-semibold" style={{ color: "#15803D" }}>{RM(r.paid)}</td>
+                  <td className="py-3 font-extrabold" style={{ color: r.outstanding > 0.001 ? "#DC2626" : "#15803D" }}>{RM(Math.max(0, r.outstanding))}</td>
+                  <td className="py-3"><button onClick={() => { setPayUid(r.u.uid); setAmt(String(Math.max(0, r.outstanding).toFixed(2))); setNote(""); }} className="rounded-lg px-3 py-1.5 text-xs font-bold text-white" style={{ background: PURPLE }}>Rekod Bayaran</button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="mt-3 text-xs" style={{ color: SUB }}>Baki = Diperoleh − Dibayar. Rekod setiap kali anda bayar komisen supaya tidak terbayar dua kali. Komisen bulanan dikira setiap kitaran rujukan yang aktif (dibayar).</p>
+
+      {payTarget && payInfo && (
+        <Modal onClose={() => setPayUid(null)}>
+          <div className="mb-4 flex items-center gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(payTarget.name || payTarget.email || "?").slice(0, 2).toUpperCase()}</div>
+            <div className="min-w-0"><p className="truncate text-base font-bold">Bayaran Komisen — {payTarget.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{payTarget.email}</p></div>
+          </div>
+          <div className="mb-4 grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl p-2.5" style={{ background: "#F8FAFC" }}><p className="text-[11px]" style={{ color: SUB }}>Diperoleh</p><p className="font-bold">{RM(payInfo.total)}</p></div>
+            <div className="rounded-xl p-2.5" style={{ background: "#F0FDF4" }}><p className="text-[11px]" style={{ color: SUB }}>Dibayar</p><p className="font-bold" style={{ color: "#15803D" }}>{RM(payInfo.paid)}</p></div>
+            <div className="rounded-xl p-2.5" style={{ background: "#FEF2F2" }}><p className="text-[11px]" style={{ color: SUB }}>Baki</p><p className="font-extrabold" style={{ color: "#DC2626" }}>{RM(Math.max(0, payInfo.outstanding))}</p></div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Jumlah Bayaran (RM)"><Input type="number" value={amt} onChange={setAmt} /></Field>
+            <Field label="Nota / Ref (pilihan)"><Input value={note} onChange={setNote} placeholder="cth: DuitNow 17/9" /></Field>
+          </div>
+          <button onClick={() => { recordAffiliatePayout(payTarget.uid, amt, note); setPayUid(null); }} className="mt-3 w-full rounded-xl py-2.5 text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}>Simpan Bayaran</button>
+
+          {payouts.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-xs font-bold" style={{ color: SUB }}>Sejarah Bayaran</p>
+              <div className="flex flex-col gap-1.5">
+                {payouts.map(([id, p]) => (
+                  <div key={id} className="flex items-center justify-between rounded-lg border p-2 text-xs" style={{ borderColor: "#F1F0F6" }}>
+                    <span><b>{RM(p.amount || 0)}</b> · {p.at ? String(p.at).slice(0, 10) : ""}{p.note ? ` · ${p.note}` : ""}</span>
+                    <button onClick={() => deleteAffiliatePayout(payTarget.uid, id)} className="rounded border p-1" style={{ borderColor: "#FECACA" }}><Trash2 size={12} style={{ color: "#DC2626" }} /></button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Modal>
+      )}
+    </Panel>
+  );
+}
 function AdminPage({ ctx }) {
   const { users, authUser, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord } = ctx;
   const [q, setQ] = useState("");
@@ -519,6 +601,8 @@ function AdminPage({ ctx }) {
         </div>
         <p className="mt-3 text-xs" style={{ color: SUB }}><b>{openCount}</b> user Open untuk {cmLabel}. Klik butang Open/Close untuk bulan ini, atau ikon kalendar untuk urus semua bulan (Close = user disekat). Nota: "Gantung" menghalang akses serta-merta. Memadam akaun log masuk sepenuhnya perlu Firebase Admin SDK (server) — butang padam di sini hanya buang rekod & data RTDB.</p>
       </Panel>
+
+      <AffiliateCommissions ctx={ctx} />
 
       {billUid && (() => { const bu = users.find((u) => u.uid === billUid); return bu ? <BillingModal bu={bu} ctx={ctx} onClose={() => setBillUid(null)} /> : null; })()}
 
@@ -1009,6 +1093,8 @@ export default function HostIncome() {
   function approvePayment(uid, month) { fb.current.update(fb.current.dataPath(uid, `payProof/${month}`), { status: "approved" }); setUserBilling(uid, month, "open"); }
   function rejectPayment(uid, month) { fb.current.update(fb.current.dataPath(uid, `payProof/${month}`), { status: "rejected" }); flash("Bukti ditolak."); }
   function setUserReferredBy(uid, code) { fb.current.update(fb.current.usersPath(uid), { referredBy: code ? String(code).toUpperCase() : null }); flash("Rujukan dikemaskini."); }
+  function recordAffiliatePayout(uid, amount, note) { const id = "p" + Date.now(); fb.current.update(fb.current.usersPath(uid), { ["affiliate/payouts/" + id]: { amount: Number(amount || 0), at: iso(new Date()), note: note || "" } }); flash("Bayaran komisen direkodkan."); }
+  function deleteAffiliatePayout(uid, id) { fb.current.update(fb.current.usersPath(uid), { ["affiliate/payouts/" + id]: null }); flash("Rekod bayaran dipadam."); }
   function deleteUserRecord(uid) { fb.current.remove(fb.current.usersPath(uid)); fb.current.remove(fb.current.ref(fb.current.database, `${FB_ROOT}/data/${uid}`)); flash("Rekod & data dipadam."); }
 
   const data = useMemo(() => deriveAll(sessions, brands, claims), [sessions, brands, claims]);
@@ -1112,7 +1198,7 @@ export default function HostIncome() {
     ...(isAffiliate && !isAdmin ? [{ id: "affiliate", label: "Affiliate", Icon: Share2 }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser, payProof, submitPayProof, fetchPayProofs, approvePayment, rejectPayment, setUserReferredBy };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser, payProof, submitPayProof, fetchPayProofs, approvePayment, rejectPayment, setUserReferredBy, recordAffiliatePayout, deleteAffiliatePayout };
 
   if (USE_FB && !demo) {
     if (!authReady) return <FullLoader text="Memuatkan…" />;
