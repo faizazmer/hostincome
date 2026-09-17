@@ -662,7 +662,7 @@ function UserAffiliatePage({ ctx }) {
   );
 }
 function BillingModal({ bu, ctx, onClose }) {
-  const { setUserBilling, setUserBillingMulti, setUserSubPrice, setUserMonthPrice, fetchPayProofs, approvePayment, rejectPayment } = ctx;
+  const { setUserBilling, setUserBillingMulti, setUserSubPrice, setUserMonthPrice, fetchPayProofs, approvePayment, rejectPayment, setUserReferredBy } = ctx;
   const MON = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
   const CM = monthKey();
   const [billYear, setBillYear] = useState(TODAY.getFullYear());
@@ -701,6 +701,9 @@ function BillingModal({ bu, ctx, onClose }) {
         <p className="mb-1 text-xs font-bold" style={{ color: SUB }}>Harga Asas (RM/bulan) — default</p>
         <input key={bu.uid} type="number" defaultValue={bu.subPrice != null ? bu.subPrice : ""} onBlur={(e) => setUserSubPrice(bu.uid, e.target.value)} placeholder="cth: 29" className="w-40 rounded-xl border px-3 py-2 text-sm font-bold outline-none" style={{ borderColor: "#E6E6EE" }} />
         <p className="mt-1 text-[11px]" style={{ color: SUB }}>Digunakan untuk bulan tanpa harga khas. Set harga promo berbeza pada bulan tertentu di bawah.</p>
+        <p className="mb-1 mt-3 text-xs font-bold" style={{ color: SUB }}>Dirujuk oleh (kod affiliate) — pilihan</p>
+        <input key={"ref" + bu.uid} defaultValue={bu.referredBy || ""} onBlur={(e) => setUserReferredBy(bu.uid, e.target.value.trim())} placeholder="cth: FAIZ1234" className="w-40 rounded-xl border px-3 py-2 text-sm font-bold uppercase outline-none" style={{ borderColor: "#E6E6EE" }} />
+        <p className="mt-1 text-[11px]" style={{ color: SUB }}>Isi kod affiliate yang merujuk user ini (untuk kira komisen). Biasanya diisi automatik semasa daftar guna link.</p>
       </div>
       <div className="mb-3 flex items-center justify-between">
         <button onClick={() => setBillYear(billYear - 1)} className="rounded-lg border p-2" style={{ borderColor: "#EEF0F4" }}><ChevronLeft size={16} style={{ color: PURPLE }} /></button>
@@ -808,10 +811,10 @@ const FB_ROOT = "hostincome";
 const ADMIN_EMAILS = [];
 // Maklumat pembayaran (EDIT ikut anda). whatsapp: nombor tanpa '+' atau '0' awalan negara, cth Malaysia "60123456789".
 const PAY_CONFIG = {
-  whatsapp: "601131811154",
+  whatsapp: "60123456789",
   bankName: "Maybank",
-  bankAccount: "155023403066",
-  bankHolder: "Mohamad Faiz Azmer",
+  bankAccount: "1234567890",
+  bankHolder: "HostIncome",
   note: "Sila hantar bukti pembayaran melalui WhatsApp atau muat naik di bawah.",
 };
 
@@ -844,6 +847,7 @@ export default function HostIncome() {
   const [demo, setDemo] = useState(false);
   const [payProof, setPayProof] = useState({});
   const fb = useRef(null);
+  const pendingRef = useRef(null); // kod rujukan sementara semasa pendaftaran
   const [toast, setToast] = useState(null);
   function flash(msg) { setToast(msg); setTimeout(() => setToast(null), 2600); }
   const isAdmin = profile?.role === "admin";
@@ -893,8 +897,10 @@ export default function HostIncome() {
     const role = isAdminEmail ? "admin" : "host";
     const status = isAdminEmail ? "active" : "pending"; // user baru perlu kelulusan admin
     const rec = { name: name || (email || "User").split("@")[0], email, role, status, createdAt: iso(new Date()) };
-    if (refCode) rec.referredBy = String(refCode).toUpperCase();
+    const rc = refCode || pendingRef.current;
+    if (rc) rec.referredBy = String(rc).toUpperCase();
     await set(uref, rec);
+    pendingRef.current = null;
     return rec;
   }
 
@@ -950,6 +956,7 @@ export default function HostIncome() {
   }
   async function register(email, password, name, refCode) {
     const { createUserWithEmailAndPassword, updateProfile } = fb.current.authMod;
+    pendingRef.current = refCode || null;
     const cred = await createUserWithEmailAndPassword(fb.current.auth, email, password);
     if (name) { try { await updateProfile(cred.user, { displayName: name }); } catch (e) {} }
     await ensureUser(cred.user.uid, email, name, refCode);
@@ -984,6 +991,7 @@ export default function HostIncome() {
   async function fetchPayProofs(uid) { try { const s = await fb.current.get(fb.current.dataPath(uid, "payProof")); return s.val() || {}; } catch (e) { return {}; } }
   function approvePayment(uid, month) { fb.current.update(fb.current.dataPath(uid, `payProof/${month}`), { status: "approved" }); setUserBilling(uid, month, "open"); }
   function rejectPayment(uid, month) { fb.current.update(fb.current.dataPath(uid, `payProof/${month}`), { status: "rejected" }); flash("Bukti ditolak."); }
+  function setUserReferredBy(uid, code) { fb.current.update(fb.current.usersPath(uid), { referredBy: code ? String(code).toUpperCase() : null }); flash("Rujukan dikemaskini."); }
   function deleteUserRecord(uid) { fb.current.remove(fb.current.usersPath(uid)); fb.current.remove(fb.current.ref(fb.current.database, `${FB_ROOT}/data/${uid}`)); flash("Rekod & data dipadam."); }
 
   const data = useMemo(() => deriveAll(sessions, brands, claims), [sessions, brands, claims]);
@@ -1087,7 +1095,7 @@ export default function HostIncome() {
     ...(isAffiliate && !isAdmin ? [{ id: "affiliate", label: "Affiliate", Icon: Share2 }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser, payProof, submitPayProof, fetchPayProofs, approvePayment, rejectPayment };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser, payProof, submitPayProof, fetchPayProofs, approvePayment, rejectPayment, setUserReferredBy };
 
   if (USE_FB && !demo) {
     if (!authReady) return <FullLoader text="Memuatkan…" />;
