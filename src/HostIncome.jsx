@@ -462,6 +462,81 @@ function Tutorial({ onDone, setPage }) {
     </Modal>
   );
 }
+function UserProfileModal({ u, users, ctx, onClose }) {
+  const { fetchUserSettings } = ctx;
+  const [s, setS] = useState(null);
+  useEffect(() => { fetchUserSettings(u.uid).then(setS); }, [u.uid]);
+  const photo = (s && s.photo) || "";
+  const phone = u.phone || (s && s.phone) || "";
+  const email = u.email || (s && s.email) || "";
+  const address = (s && s.address) || "";
+  const bankName = (s && s.bankName) || ""; const bankAcc = (s && s.bankAccount) || "";
+  const waNum = phone ? phone.replace(/[^0-9]/g, "").replace(/^0/, "60") : "";
+  const CM = cycleKeyFor(u); const openCM = (u.billing || {})[CM] === "open";
+  const priceCM = (u.prices && u.prices[CM] != null) ? u.prices[CM] : (u.subPrice || 0);
+  const activeCycles = Object.values(u.billing || {}).filter((v) => v === "open").length;
+  const totalPaid = Object.keys(u.billing || {}).filter((m) => u.billing[m] === "open").reduce((a, m) => a + ((u.prices && u.prices[m] != null) ? Number(u.prices[m]) : Number(u.subPrice || 0)), 0);
+  const aff = (u.affiliate && u.affiliate.enabled) ? affEarnings(u, users) : null;
+  const Row = ({ label, value, mono }) => <div className="flex items-start justify-between gap-3 py-1.5"><span className="shrink-0 text-xs" style={{ color: SUB }}>{label}</span><span className={"text-right text-sm font-semibold " + (mono ? "tabular-nums" : "")} style={{ wordBreak: "break-word" }}>{value || <span style={{ color: "#C4C4CC" }}>—</span>}</span></div>;
+  return (
+    <Modal onClose={onClose}>
+      <div className="flex items-center gap-4">
+        <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-2xl text-2xl font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{photo ? <img src={photo} alt="" className="h-full w-full object-cover" /> : (u.name || u.email || "?").slice(0, 2).toUpperCase()}</div>
+        <div className="min-w-0">
+          <p className="truncate text-lg font-bold">{u.name}</p>
+          <p className="truncate text-sm" style={{ color: SUB }}>{email}</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+            <Pill tone={u.role === "admin" ? "purple" : "gray"}>{u.role === "admin" ? "Admin" : "Host"}</Pill>
+            <Pill tone={u.status === "active" ? "green" : u.status === "pending" ? "amber" : "red"}>{u.status === "active" ? "Aktif" : u.status === "pending" ? "Menunggu" : "Digantung"}</Pill>
+            <Pill tone={openCM ? "green" : "amber"}>{openCM ? "Langganan Aktif" : "Belum Bayar"}</Pill>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 flex gap-2">
+        {waNum && <a href={`https://wa.me/${waNum}`} target="_blank" rel="noreferrer" className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl py-2.5 text-sm font-bold text-white" style={{ background: "#16A34A" }}><Share2 size={15} /> WhatsApp</a>}
+        {email && <a href={`mailto:${email}`} className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl border py-2.5 text-sm font-bold" style={{ borderColor: "#EEF0F4", color: PURPLE }}>Email</a>}
+      </div>
+
+      <div className="mt-4 rounded-xl border p-3" style={{ borderColor: "#F1F0F6" }}>
+        <p className="mb-1 text-xs font-bold" style={{ color: PURPLE }}>Maklumat Hubungan</p>
+        <Row label="No. Telefon" value={phone} />
+        <Row label="Emel" value={email} />
+        <Row label="Alamat" value={address} />
+      </div>
+
+      <div className="mt-3 rounded-xl border p-3" style={{ borderColor: "#F1F0F6" }}>
+        <p className="mb-1 text-xs font-bold" style={{ color: PURPLE }}>Akaun & Langganan</p>
+        <Row label="Tarikh Daftar" value={u.createdAt} />
+        <Row label="Kitaran Semasa" value={cycleLabel(u, CM)} />
+        <Row label="Harga Kitaran" value={RM(priceCM)} mono />
+        <Row label="Kitaran Aktif" value={`${activeCycles} bulan`} />
+        <Row label="Jumlah Dibayar" value={RM(totalPaid)} mono />
+        {u.referredBy && <Row label="Dirujuk oleh" value={u.referredBy} />}
+      </div>
+
+      {bankName || bankAcc ? (
+        <div className="mt-3 rounded-xl border p-3" style={{ borderColor: "#F1F0F6" }}>
+          <p className="mb-1 text-xs font-bold" style={{ color: PURPLE }}>Bank</p>
+          <Row label="Bank" value={bankName} />
+          <Row label="No. Akaun" value={bankAcc} mono />
+        </div>
+      ) : null}
+
+      {aff && (
+        <div className="mt-3 rounded-xl border p-3" style={{ borderColor: "#E4E0F5", background: "#FCFBFE" }}>
+          <p className="mb-1 text-xs font-bold" style={{ color: PURPLE }}>Affiliate</p>
+          <Row label="Kod" value={aff.code} />
+          <Row label="Komisen" value={`${aff.percent}% ${aff.type === "oneoff" ? "(sekali)" : "(bulanan)"}`} />
+          <Row label="Rujukan" value={`${aff.refCount} user`} />
+          <Row label="Diperoleh / Baki" value={`${RM(aff.total)} / ${RM(Math.max(0, aff.outstanding))}`} mono />
+        </div>
+      )}
+
+      <button onClick={onClose} className="mt-5 w-full rounded-xl border py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Tutup</button>
+    </Modal>
+  );
+}
 function AffiliateCommissions({ ctx }) {
   const { users, recordAffiliatePayout, deleteAffiliatePayout } = ctx;
   const [payUid, setPayUid] = useState(null);
@@ -537,6 +612,7 @@ function AdminPage({ ctx }) {
   const [q, setQ] = useState("");
   const [billUid, setBillUid] = useState(null);
   const [affUid, setAffUid] = useState(null);
+  const [profileUid, setProfileUid] = useState(null);
   const [billYear, setBillYear] = useState(TODAY.getFullYear());
   const MON = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
   const CM = monthKey();
@@ -588,6 +664,7 @@ function AdminPage({ ctx }) {
                           {u.status === "pending" && <button onClick={() => setUserStatus(u.uid, "active")} className="rounded-lg px-2.5 py-1.5 text-xs font-bold text-white" style={{ background: "#16A34A" }}>Luluskan</button>}
                           {u.status === "active" && <button onClick={() => setUserStatus(u.uid, "suspended")} className="rounded-lg border px-2.5 py-1.5 text-xs font-bold" style={{ borderColor: "#FECACA", color: "#DC2626" }}>Gantung</button>}
                           {u.status === "suspended" && <button onClick={() => setUserStatus(u.uid, "active")} className="rounded-lg border px-2.5 py-1.5 text-xs font-bold" style={{ borderColor: "#BBF7D0", color: "#15803D" }}>Aktifkan</button>}
+                          <button onClick={() => setProfileUid(u.uid)} title="Lihat Profil" className="rounded-lg border px-2 py-1.5" style={{ borderColor: "#EEF0F4" }}><Eye size={13} style={{ color: PURPLE }} /></button>
                           <button onClick={() => setAffUid(u.uid)} title="Affiliate" className="rounded-lg border px-2 py-1.5" style={{ borderColor: (u.affiliate && u.affiliate.enabled) ? "#BBF7D0" : "#EEF0F4" }}><Share2 size={13} style={{ color: (u.affiliate && u.affiliate.enabled) ? "#15803D" : PURPLE }} /></button>
                           <button onClick={() => { if (confirm("Padam rekod & data user ini? (Akaun login kekal — perlu Admin SDK untuk padam penuh)")) deleteUserRecord(u.uid); }} className="rounded-lg border px-2 py-1.5" style={{ borderColor: "#EEF0F4" }}><Trash2 size={13} style={{ color: "#DC2626" }} /></button>
                         </div>
@@ -609,6 +686,11 @@ function AdminPage({ ctx }) {
       {(() => {
         const au = users.find((u) => u.uid === affUid); if (!au) return null;
         return <AffiliateModal au={au} users={users} onClose={() => setAffUid(null)} onSave={(obj) => { setUserAffiliate(au.uid, obj); }} />;
+      })()}
+
+      {(() => {
+        const pu = users.find((u) => u.uid === profileUid); if (!pu) return null;
+        return <UserProfileModal u={pu} users={users} ctx={ctx} onClose={() => setProfileUid(null)} />;
       })()}
     </>
   );
@@ -1090,6 +1172,7 @@ export default function HostIncome() {
     flash("Bukti pembayaran dihantar. Menunggu pengesahan admin.");
   }
   async function fetchPayProofs(uid) { try { const s = await fb.current.get(fb.current.dataPath(uid, "payProof")); return s.val() || {}; } catch (e) { return {}; } }
+  async function fetchUserSettings(uid) { try { const s = await fb.current.get(fb.current.dataPath(uid, "settings")); return s.val() || {}; } catch (e) { return {}; } }
   function approvePayment(uid, month) { fb.current.update(fb.current.dataPath(uid, `payProof/${month}`), { status: "approved" }); setUserBilling(uid, month, "open"); }
   function rejectPayment(uid, month) { fb.current.update(fb.current.dataPath(uid, `payProof/${month}`), { status: "rejected" }); flash("Bukti ditolak."); }
   function setUserReferredBy(uid, code) { fb.current.update(fb.current.usersPath(uid), { referredBy: code ? String(code).toUpperCase() : null }); flash("Rujukan dikemaskini."); }
@@ -1198,7 +1281,7 @@ export default function HostIncome() {
     ...(isAffiliate && !isAdmin ? [{ id: "affiliate", label: "Affiliate", Icon: Share2 }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser, payProof, submitPayProof, fetchPayProofs, approvePayment, rejectPayment, setUserReferredBy, recordAffiliatePayout, deleteAffiliatePayout };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser, payProof, submitPayProof, fetchPayProofs, fetchUserSettings, approvePayment, rejectPayment, setUserReferredBy, recordAffiliatePayout, deleteAffiliatePayout };
 
   if (USE_FB && !demo) {
     if (!authReady) return <FullLoader text="Memuatkan…" />;
