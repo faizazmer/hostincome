@@ -45,6 +45,12 @@ function fmtTimeShort(hhmm) { let [h, m] = hhmm.split(":").map(Number); const ap
 function RM(n) { return `RM${Number(n).toLocaleString("en-MY", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function H(n) { return parseFloat((Math.round((Number(n) || 0) * 100) / 100).toFixed(2)); }
 function monthKey(d) { const x = d || TODAY; return `${x.getFullYear()}-${pad(x.getMonth() + 1)}`; }
+function daysInMonth(y, m) { return new Date(y, m + 1, 0).getDate(); }
+function anchorDay(u) { const c = u && u.createdAt; const d = c ? parseISO(c) : TODAY; return d.getDate() || 1; }
+// Kunci kitaran (YYYY-MM = bulan kitaran BERMULA), ikut hari daftar (anniversary).
+function cycleKeyFor(u, ref) { const ad = anchorDay(u); const d = ref || TODAY; const eff = Math.min(ad, daysInMonth(d.getFullYear(), d.getMonth())); if (d.getDate() >= eff) return `${d.getFullYear()}-${pad(d.getMonth() + 1)}`; const p = new Date(d.getFullYear(), d.getMonth() - 1, 1); return `${p.getFullYear()}-${pad(p.getMonth() + 1)}`; }
+function cycleBounds(u, key) { const ad = anchorDay(u); const [Y, M] = key.split("-").map(Number); const m = M - 1; const sD = Math.min(ad, daysInMonth(Y, m)); const start = new Date(Y, m, sD); const nY = m === 11 ? Y + 1 : Y, nM = m === 11 ? 0 : m + 1; const nsD = Math.min(ad, daysInMonth(nY, nM)); const nextStart = new Date(nY, nM, nsD); const end = new Date(nextStart.getTime() - 86400000); return { start, end, nextStart }; }
+function cycleLabel(u, key) { const { start, end } = cycleBounds(u, key); return `${start.getDate()} ${MONTHS_MS[start.getMonth()]} – ${end.getDate()} ${MONTHS_MS[end.getMonth()]}`; }
 function pad(n) { return String(n).padStart(2, "0"); }
 function durHours(s, e) { const a = s.split(":").map(Number), b = e.split(":").map(Number); return Math.max(0, (b[0] * 60 + b[1] - (a[0] * 60 + a[1])) / 60); }
 function brandSlug(b) { return ((b || "SESI").replace(/[^A-Za-z0-9]/g, "").toUpperCase().slice(0, 4)) || "SESI"; }
@@ -369,9 +375,9 @@ function PendingScreen({ email, onLogout }) {
     </div>
   );
 }
-function BillingClosedScreen({ email, name, onLogout, month, amount, proof, onSubmitProof }) {
+function BillingClosedScreen({ email, name, onLogout, month, periodLabel, amount, proof, onSubmitProof }) {
   const [img, setImg] = useState(proof && proof.img ? proof.img : "");
-  const waMsg = `Hi admin, saya ${name || email} ingin bayar langganan HostIncome untuk bulan ${month} (RM${amount}). Ini bukti pembayaran saya:`;
+  const waMsg = `Hi admin, saya ${name || email} ingin bayar langganan HostIncome untuk tempoh ${periodLabel || month} (RM${amount}). Ini bukti pembayaran saya:`;
   const waHref = `https://wa.me/${PAY_CONFIG.whatsapp}?text=${encodeURIComponent(waMsg)}`;
   const status = proof && proof.status;
   return (
@@ -380,7 +386,7 @@ function BillingClosedScreen({ email, name, onLogout, month, amount, proof, onSu
         <div className="text-center">
           <span className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl" style={{ background: "#FEE2E2" }}><Lock size={22} style={{ color: "#DC2626" }} /></span>
           <h1 className="mt-4 text-lg font-bold">Langganan Belum Aktif</h1>
-          <p className="mt-1 text-sm" style={{ color: SUB }}>Langganan bulan <b>{month}</b> berjumlah <b>RM{amount}</b>. Sila buat pembayaran & hantar bukti untuk pengaktifan.</p>
+          <p className="mt-1 text-sm" style={{ color: SUB }}>Langganan tempoh <b>{periodLabel || month}</b> berjumlah <b>RM{amount}</b>. Sila buat pembayaran & hantar bukti untuk pengaktifan.</p>
         </div>
 
         {status === "pending" ? (
@@ -529,9 +535,11 @@ function UserSubscriptionPage({ ctx }) {
   const prices = (profile && profile.prices) || {};
   const base = Number((profile && profile.subPrice) || 0);
   const priceFor = (m) => { const p = prices[m]; return p != null ? Number(p) : base; };
-  const MON = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
-  const CM = monthKey();
-  const cmLabel = MON[TODAY.getMonth()] + " " + TODAY.getFullYear();
+  const MON = MONTHS_MS;
+  const CM = cycleKeyFor(profile);
+  const periodLabel = cycleLabel(profile, CM);
+  const nextDue = cycleBounds(profile, CM).nextStart;
+  const dueLabel = `${nextDue.getDate()} ${MON[nextDue.getMonth()]} ${nextDue.getFullYear()}`;
   const [year, setYear] = useState(TODAY.getFullYear());
   const openCM = billing[CM] === "open";
   const priceCM = priceFor(CM);
@@ -543,13 +551,13 @@ function UserSubscriptionPage({ ctx }) {
       <PageHead title="Langganan Saya" subtitle="Status langganan, harga & sejarah bayaran anda." />
 
       <div className="rounded-2xl p-5 text-white" style={{ background: openCM ? "linear-gradient(135deg,#16A34A,#15803D)" : "linear-gradient(135deg,#F59E0B,#DC2626)", boxShadow: "0 12px 30px rgba(0,0,0,0.15)" }}>
-        <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider opacity-90">{openCM ? <CheckCircle2 size={14} /> : <Lock size={14} />} {cmLabel}</p>
+        <p className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider opacity-90">{openCM ? <CheckCircle2 size={14} /> : <Lock size={14} />} Tempoh {periodLabel}</p>
         <p className="mt-2 text-2xl font-extrabold">{openCM ? "Langganan Aktif" : "Langganan Belum Aktif"}</p>
-        <p className="mt-1 text-sm opacity-95">{openCM ? `Terima kasih! Langganan bulan ini (RM${priceCM}) telah diaktifkan.` : `Sila bayar RM${priceCM} untuk mengaktifkan bulan ${cmLabel}. Hubungi admin untuk pembayaran.`}</p>
+        <p className="mt-1 text-sm opacity-95">{openCM ? `Aktif — RM${priceCM}. Kitaran seterusnya bermula ${dueLabel}.` : `Sila bayar RM${priceCM} untuk kitaran ${periodLabel}. Hubungi admin untuk pengaktifan.`}</p>
       </div>
 
       <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatCard theme="purple" Icon={Coins} label={`Harga ${cmLabel}`} value={RM(priceCM)} sub="bulan ini" />
+        <StatCard theme="purple" Icon={Coins} label="Harga Kitaran" value={RM(priceCM)} sub="kitaran ini" />
         <StatCard theme="green" Icon={CheckCircle2} label="Bulan Aktif" value={`${activeCount}`} sub="jumlah bulan dibayar" />
         <StatCard theme="orange" Icon={Wallet} label="Jumlah Dibayar" value={RM(totalPaid)} sub="keseluruhan" />
       </div>
@@ -570,6 +578,7 @@ function UserSubscriptionPage({ ctx }) {
             return (
               <div key={k} className="rounded-xl border p-3" style={{ borderColor: open ? "#BBF7D0" : "#F1F0F6", background: open ? "#F0FDF4" : "#FAFAFB" }}>
                 <div className="flex items-center justify-between"><span className="text-sm font-bold" style={{ color: open ? "#15803D" : INK }}>{mn}{isNow && <span className="ml-1 text-[9px]" style={{ color: PURPLE }}>•kini</span>}</span>{open ? <CheckCircle2 size={15} style={{ color: "#16A34A" }} /> : <span className="h-3.5 w-3.5 rounded-full border-2" style={{ borderColor: "#E4E0F5" }} />}</div>
+                <p className="text-[9px]" style={{ color: SUB }}>{cycleLabel(profile, k)}</p>
                 <p className="mt-1 text-xs font-semibold" style={{ color: open ? "#15803D" : SUB }}>{open ? RM(pr) : `RM${pr}`}</p>
                 <p className="text-[10px]" style={{ color: SUB }}>{open ? "Dibayar" : "Belum bayar"}</p>
               </div>
@@ -594,15 +603,15 @@ function UserAffiliatePage({ ctx }) {
 
   const referrals = (users || []).filter((u) => (u.referredBy || "").toUpperCase() === code && code);
   const refCount = referrals.length;
-  const activeThisMonth = referrals.filter((u) => (u.billing || {})[CM] === "open").length;
+  const activeThisMonth = referrals.filter((u) => (u.billing || {})[cycleKeyFor(u)] === "open").length;
   const openMonths = (u) => Object.values(u.billing || {}).filter((v) => v === "open").length;
   const priceForMonth = (u, m) => { const p = u.prices && u.prices[m]; return p != null ? Number(p) : Number(u.subPrice || 0); };
 
   let thisMonthEarn = 0, totalEarn = 0;
   if (type === "oneoff") {
-    referrals.forEach((u) => { const oms = Object.keys(u.billing || {}).filter((m) => u.billing[m] === "open").sort(); if (oms.length) { const c = priceForMonth(u, oms[0]) * percent / 100; totalEarn += c; if (oms[0] === CM) thisMonthEarn += c; } });
+    referrals.forEach((u) => { const oms = Object.keys(u.billing || {}).filter((m) => u.billing[m] === "open").sort(); if (oms.length) { const c = priceForMonth(u, oms[0]) * percent / 100; totalEarn += c; if (oms[0] === cycleKeyFor(u)) thisMonthEarn += c; } });
   } else {
-    referrals.forEach((u) => { Object.keys(u.billing || {}).forEach((m) => { if (u.billing[m] === "open") { const c = priceForMonth(u, m) * percent / 100; totalEarn += c; if (m === CM) thisMonthEarn += c; } }); });
+    referrals.forEach((u) => { Object.keys(u.billing || {}).forEach((m) => { if (u.billing[m] === "open") { const c = priceForMonth(u, m) * percent / 100; totalEarn += c; if (m === cycleKeyFor(u)) thisMonthEarn += c; } }); });
   }
 
   const copy = (t) => { try { navigator.clipboard.writeText(t); ctx.flash("Disalin."); } catch (e) {} };
@@ -644,11 +653,11 @@ function UserAffiliatePage({ ctx }) {
               <thead><tr className="text-left" style={{ color: SUB }}><th className="pb-3 font-semibold">User</th><th className="pb-3 font-semibold">Harga Sub</th><th className="pb-3 font-semibold">Tarikh Daftar</th><th className="pb-3 font-semibold">Status {cmLabel}</th></tr></thead>
               <tbody>
                 {referrals.map((u) => {
-                  const open = (u.billing || {})[CM] === "open";
+                  const open = (u.billing || {})[cycleKeyFor(u)] === "open";
                   return (
                     <tr key={u.uid} className="border-t" style={{ borderColor: "#F1F0F6" }}>
                       <td className="py-3"><div className="flex items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(u.name || u.email || "?").slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate font-bold">{u.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{u.email}</p>{u.phone && <p className="truncate text-[11px]" style={{ color: SUB }}>{u.phone}</p>}</div></div></td>
-                      <td className="py-3 text-xs" style={{ color: SUB }}>{priceForMonth(u, CM) ? RM(priceForMonth(u, CM)) : "—"}</td>
+                      <td className="py-3 text-xs" style={{ color: SUB }}>{priceForMonth(u, cycleKeyFor(u)) ? RM(priceForMonth(u, cycleKeyFor(u))) : "—"}</td>
                       <td className="py-3 text-xs" style={{ color: SUB }}>{u.createdAt || "-"}</td>
                       <td className="py-3"><Pill tone={open ? "green" : "amber"}>{open ? "Aktif" : "Belum bayar"}</Pill></td>
                     </tr>
@@ -665,8 +674,8 @@ function UserAffiliatePage({ ctx }) {
 }
 function BillingModal({ bu, ctx, onClose }) {
   const { setUserBilling, setUserBillingMulti, setUserSubPrice, setUserMonthPrice, fetchPayProofs, approvePayment, rejectPayment, setUserReferredBy } = ctx;
-  const MON = ["Jan", "Feb", "Mac", "Apr", "Mei", "Jun", "Jul", "Ogo", "Sep", "Okt", "Nov", "Dis"];
-  const CM = monthKey();
+  const MON = MONTHS_MS;
+  const CM = cycleKeyFor(bu);
   const [billYear, setBillYear] = useState(TODAY.getFullYear());
   const [proofs, setProofs] = useState({});
   const loadProofs = () => fetchPayProofs(bu.uid).then(setProofs);
@@ -703,6 +712,7 @@ function BillingModal({ bu, ctx, onClose }) {
         <p className="mb-1 text-xs font-bold" style={{ color: SUB }}>Harga Asas (RM/bulan) — default</p>
         <input key={bu.uid} type="number" defaultValue={bu.subPrice != null ? bu.subPrice : ""} onBlur={(e) => setUserSubPrice(bu.uid, e.target.value)} placeholder="cth: 29" className="w-40 rounded-xl border px-3 py-2 text-sm font-bold outline-none" style={{ borderColor: "#E6E6EE" }} />
         <p className="mt-1 text-[11px]" style={{ color: SUB }}>Digunakan untuk bulan tanpa harga khas. Set harga promo berbeza pada bulan tertentu di bawah.</p>
+        <p className="mt-2 text-[11px] font-semibold" style={{ color: PURPLE }}>Kitaran bermula hari ke-{anchorDay(bu)} setiap bulan (daftar {bu.createdAt || "-"}). Setiap petak = satu kitaran.</p>
         <p className="mb-1 mt-3 text-xs font-bold" style={{ color: SUB }}>Dirujuk oleh (kod affiliate) — pilihan</p>
         <input key={"ref" + bu.uid} defaultValue={bu.referredBy || ""} onBlur={(e) => setUserReferredBy(bu.uid, e.target.value.trim())} placeholder="cth: FAIZ1234" className="w-40 rounded-xl border px-3 py-2 text-sm font-bold uppercase outline-none" style={{ borderColor: "#E6E6EE" }} />
         <p className="mt-1 text-[11px]" style={{ color: SUB }}>Isi kod affiliate yang merujuk user ini (untuk kira komisen). Biasanya diisi automatik semasa daftar guna link.</p>
@@ -721,7 +731,8 @@ function BillingModal({ bu, ctx, onClose }) {
                 <span>{mn}{isNow && <span className="ml-1 text-[9px]" style={{ opacity: 0.7 }}>•kini</span>}</span>
                 {open ? <CheckCircle2 size={15} /> : <span className="h-4 w-4 rounded-full border-2" style={{ borderColor: "#FECACA" }} />}
               </button>
-              <div className="mt-1.5 flex items-center gap-1 rounded-lg border px-1.5" style={{ borderColor: "#EEF0F4", background: "#fff" }}>
+              <p className="mt-0.5 text-[9px]" style={{ color: SUB }}>{cycleLabel(bu, k)}</p>
+              <div className="mt-1 flex items-center gap-1 rounded-lg border px-1.5" style={{ borderColor: "#EEF0F4", background: "#fff" }}>
                 <span className="text-[10px]" style={{ color: SUB }}>RM</span>
                 <input type="number" defaultValue={mp != null ? mp : ""} placeholder={bu.subPrice != null ? String(bu.subPrice) : "0"} onBlur={(e) => setUserMonthPrice(bu.uid, k, e.target.value)} className="w-full bg-transparent py-1 text-xs font-semibold outline-none" />
               </div>
@@ -1110,7 +1121,7 @@ export default function HostIncome() {
     if (authUser && !authUser.emailVerified && !isAdmin) return <VerifyEmailScreen email={authUser.email} onResend={resendVerification} onReload={reloadUser} onLogout={logout} />;
     if (profile && profile.status === "suspended") return <SuspendedScreen onLogout={logout} email={authUser.email} />;
     if (profile && profile.status === "pending") return <PendingScreen onLogout={logout} email={authUser.email} />;
-    if (profile && profile.role !== "admin" && ((profile.billing || {})[monthKey()] !== "open")) { const cm = monthKey(); const amt = (profile.prices && profile.prices[cm] != null) ? profile.prices[cm] : (profile.subPrice || 0); return <BillingClosedScreen email={authUser.email} name={profile.name} month={cm} amount={amt} proof={payProof[cm]} onSubmitProof={(img) => submitPayProof(cm, img, amt)} onLogout={logout} />; }
+    if (profile && profile.role !== "admin" && ((profile.billing || {})[cycleKeyFor(profile)] !== "open")) { const cm = cycleKeyFor(profile); const amt = (profile.prices && profile.prices[cm] != null) ? profile.prices[cm] : (profile.subPrice || 0); return <BillingClosedScreen email={authUser.email} name={profile.name} month={cm} periodLabel={cycleLabel(profile, cm)} amount={amt} proof={payProof[cm]} onSubmitProof={(img) => submitPayProof(cm, img, amt)} onLogout={logout} />; }
     if (loading) return <FullLoader text="Menyambung ke data…" />;
   }
 
