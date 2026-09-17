@@ -282,6 +282,7 @@ function prettyAuthErr(e) {
 function AuthScreen({ onLogin, onRegister, onDemo }) {
   const [mode, setMode] = useState("login");
   const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
@@ -292,7 +293,7 @@ function AuthScreen({ onLogin, onRegister, onDemo }) {
     setErr(""); setBusy(true);
     try {
       if (mode === "login") await onLogin(email.trim(), pw);
-      else await onRegister(email.trim(), pw, name.trim(), refCode.trim() || null);
+      else await onRegister(email.trim(), pw, name.trim(), refCode.trim() || null, phone.trim() || null);
     } catch (e) { setErr(prettyAuthErr(e)); setBusy(false); }
   }
   return (
@@ -305,6 +306,7 @@ function AuthScreen({ onLogin, onRegister, onDemo }) {
         <p className="mb-5 text-xs" style={{ color: SUB }}>{mode === "login" ? "Masuk untuk akses tracker anda." : "Cipta akaun host baru."}</p>
         <div className="flex flex-col gap-3">
           {mode === "register" && <Field label="Nama"><Input value={name} onChange={setName} placeholder="Nama anda" /></Field>}
+          {mode === "register" && <Field label="No. Telefon"><Input value={phone} onChange={setPhone} placeholder="cth: 012-3456789" /></Field>}
           <Field label="Email"><Input value={email} onChange={setEmail} placeholder="nama@email.com" /></Field>
           <Field label="Kata Laluan"><Input type="password" value={pw} onChange={setPw} placeholder="Minimum 6 aksara" /></Field>
           {mode === "register" && <Field label="Kod Referral (pilihan)"><Input value={refCode} onChange={(v) => setRefCode(v.toUpperCase())} placeholder="cth: FAIZ1234" /></Field>}
@@ -645,7 +647,7 @@ function UserAffiliatePage({ ctx }) {
                   const open = (u.billing || {})[CM] === "open";
                   return (
                     <tr key={u.uid} className="border-t" style={{ borderColor: "#F1F0F6" }}>
-                      <td className="py-3"><div className="flex items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(u.name || u.email || "?").slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate font-bold">{u.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{u.email}</p></div></div></td>
+                      <td className="py-3"><div className="flex items-center gap-2.5"><div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold text-white" style={{ background: "linear-gradient(135deg,#C084FC,#7C3AED)" }}>{(u.name || u.email || "?").slice(0, 2).toUpperCase()}</div><div className="min-w-0"><p className="truncate font-bold">{u.name}</p><p className="truncate text-xs" style={{ color: SUB }}>{u.email}</p>{u.phone && <p className="truncate text-[11px]" style={{ color: SUB }}>{u.phone}</p>}</div></div></td>
                       <td className="py-3 text-xs" style={{ color: SUB }}>{priceForMonth(u, CM) ? RM(priceForMonth(u, CM)) : "—"}</td>
                       <td className="py-3 text-xs" style={{ color: SUB }}>{u.createdAt || "-"}</td>
                       <td className="py-3"><Pill tone={open ? "green" : "amber"}>{open ? "Aktif" : "Belum bayar"}</Pill></td>
@@ -848,6 +850,7 @@ export default function HostIncome() {
   const [payProof, setPayProof] = useState({});
   const fb = useRef(null);
   const pendingRef = useRef(null); // kod rujukan sementara semasa pendaftaran
+  const pendingPhone = useRef(null); // no. telefon sementara semasa pendaftaran
   const [toast, setToast] = useState(null);
   function flash(msg) { setToast(msg); setTimeout(() => setToast(null), 2600); }
   const isAdmin = profile?.role === "admin";
@@ -886,7 +889,7 @@ export default function HostIncome() {
     return () => { if (offAuth) offAuth(); };
   }, []);
 
-  async function ensureUser(uid, email, name, refCode) {
+  async function ensureUser(uid, email, name, refCode, phone) {
     const { get, set, usersPath } = fb.current;
     const uref = usersPath(uid);
     const snap = await get(uref);
@@ -899,8 +902,10 @@ export default function HostIncome() {
     const rec = { name: name || (email || "User").split("@")[0], email, role, status, createdAt: iso(new Date()) };
     const rc = refCode || pendingRef.current;
     if (rc) rec.referredBy = String(rc).toUpperCase();
+    const ph = phone || pendingPhone.current;
+    if (ph) rec.phone = String(ph);
     await set(uref, rec);
-    pendingRef.current = null;
+    pendingRef.current = null; pendingPhone.current = null;
     return rec;
   }
 
@@ -927,7 +932,7 @@ export default function HostIncome() {
     (async () => {
       // user baru = data kosong (tiada seed). Hanya set tetapan asas (nama) jika belum ada.
       const sset = await get(p("settings"));
-      if (!sset.exists()) await set(p("settings"), { ...DEFAULT_SETTINGS, hostName: profile.name || DEFAULT_SETTINGS.hostName, photo: "", phone: "", email: profile.email || "", address: "", bankAccount: "" });
+      if (!sset.exists()) await set(p("settings"), { ...DEFAULT_SETTINGS, hostName: profile.name || DEFAULT_SETTINGS.hostName, photo: "", phone: profile.phone || "", email: profile.email || "", address: "", bankAccount: "" });
       offs.push(onValue(p("brands"), (s) => setBrands(toArr(s.val()))));
       offs.push(onValue(p("sessions"), (s) => setSessions(toArr(s.val()))));
       offs.push(onValue(p("claims"), (s) => setClaims(toArr(s.val()).map((c) => ({ ...c, sessionIds: c.sessionIds || [] })))));
@@ -954,12 +959,13 @@ export default function HostIncome() {
     const { signInWithEmailAndPassword } = fb.current.authMod;
     await signInWithEmailAndPassword(fb.current.auth, email, password);
   }
-  async function register(email, password, name, refCode) {
+  async function register(email, password, name, refCode, phone) {
     const { createUserWithEmailAndPassword, updateProfile } = fb.current.authMod;
     pendingRef.current = refCode || null;
+    pendingPhone.current = phone || null;
     const cred = await createUserWithEmailAndPassword(fb.current.auth, email, password);
     if (name) { try { await updateProfile(cred.user, { displayName: name }); } catch (e) {} }
-    await ensureUser(cred.user.uid, email, name, refCode);
+    await ensureUser(cred.user.uid, email, name, refCode, phone);
     try { const { sendEmailVerification } = fb.current.authMod; await sendEmailVerification(cred.user); } catch (e) {}
   }
   async function resendVerification() {
