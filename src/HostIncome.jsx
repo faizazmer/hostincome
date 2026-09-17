@@ -537,9 +537,13 @@ function UserProfileModal({ u, users, ctx, onClose }) {
     </Modal>
   );
 }
+function AdminAffiliatePage({ ctx }) {
+  return (<><PageHead title="Pengurusan Affiliate" subtitle="Komisen, bayaran & tetapan setiap affiliate." /><AffiliateCommissions ctx={ctx} /></>);
+}
 function AffiliateCommissions({ ctx }) {
-  const { users, recordAffiliatePayout, deleteAffiliatePayout } = ctx;
+  const { users, recordAffiliatePayout, deleteAffiliatePayout, setUserAffiliate } = ctx;
   const [payUid, setPayUid] = useState(null);
+  const [affUid, setAffUid] = useState(null);
   const [amt, setAmt] = useState("");
   const [note, setNote] = useState("");
   const affs = users.filter((u) => u.affiliate && u.affiliate.enabled);
@@ -563,7 +567,7 @@ function AffiliateCommissions({ ctx }) {
                   <td className="py-3 font-bold">{RM(r.total)}</td>
                   <td className="py-3 font-semibold" style={{ color: "#15803D" }}>{RM(r.paid)}</td>
                   <td className="py-3 font-extrabold" style={{ color: r.outstanding > 0.001 ? "#DC2626" : "#15803D" }}>{RM(Math.max(0, r.outstanding))}</td>
-                  <td className="py-3"><button onClick={() => { setPayUid(r.u.uid); setAmt(String(Math.max(0, r.outstanding).toFixed(2))); setNote(""); }} className="rounded-lg px-3 py-1.5 text-xs font-bold text-white" style={{ background: PURPLE }}>Rekod Bayaran</button></td>
+                  <td className="py-3"><div className="flex items-center gap-1.5"><button onClick={() => setAffUid(r.u.uid)} title="Tetapan affiliate" className="rounded-lg border px-2 py-1.5" style={{ borderColor: "#EEF0F4" }}><SettingsIcon size={13} style={{ color: PURPLE }} /></button><button onClick={() => { setPayUid(r.u.uid); setAmt(String(Math.max(0, r.outstanding).toFixed(2))); setNote(""); }} className="rounded-lg px-3 py-1.5 text-xs font-bold text-white" style={{ background: PURPLE }}>Rekod Bayaran</button></div></td>
                 </tr>
               ))}
             </tbody>
@@ -571,6 +575,8 @@ function AffiliateCommissions({ ctx }) {
         </div>
       )}
       <p className="mt-3 text-xs" style={{ color: SUB }}>Baki = Diperoleh − Dibayar. Rekod setiap kali anda bayar komisen supaya tidak terbayar dua kali. Komisen bulanan dikira setiap kitaran rujukan yang aktif (dibayar).</p>
+
+      {(() => { const au = users.find((u) => u.uid === affUid); if (!au) return null; return <AffiliateModal au={au} users={users} onClose={() => setAffUid(null)} onSave={(obj) => setUserAffiliate(au.uid, obj)} />; })()}
 
       {payTarget && payInfo && (
         <Modal onClose={() => setPayUid(null)}>
@@ -678,8 +684,6 @@ function AdminPage({ ctx }) {
         </div>
         <p className="mt-3 text-xs" style={{ color: SUB }}><b>{openCount}</b> user Open untuk {cmLabel}. Klik butang Open/Close untuk bulan ini, atau ikon kalendar untuk urus semua bulan (Close = user disekat). Nota: "Gantung" menghalang akses serta-merta. Memadam akaun log masuk sepenuhnya perlu Firebase Admin SDK (server) — butang padam di sini hanya buang rekod & data RTDB.</p>
       </Panel>
-
-      <AffiliateCommissions ctx={ctx} />
 
       {billUid && (() => { const bu = users.find((u) => u.uid === billUid); return bu ? <BillingModal bu={bu} ctx={ctx} onClose={() => setBillUid(null)} /> : null; })()}
 
@@ -1279,6 +1283,7 @@ export default function HostIncome() {
     { id: "tetapan", label: "Tetapan", Icon: SettingsIcon },
     ...(!isAdmin ? [{ id: "langganan", label: "Langganan", Icon: Coins }] : []),
     ...(isAffiliate && !isAdmin ? [{ id: "affiliate", label: "Affiliate", Icon: Share2 }] : []),
+    ...(isAdmin ? [{ id: "affiliate-admin", label: "Affiliate", Icon: Share2 }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
   const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser, payProof, submitPayProof, fetchPayProofs, fetchUserSettings, approvePayment, rejectPayment, setUserReferredBy, recordAffiliatePayout, deleteAffiliatePayout };
@@ -1349,6 +1354,7 @@ export default function HostIncome() {
           {page === "tetapan" && <Tetapan ctx={ctx} />}
           {page === "langganan" && !isAdmin && <UserSubscriptionPage ctx={ctx} />}
           {page === "affiliate" && isAffiliate && <UserAffiliatePage ctx={ctx} />}
+          {page === "affiliate-admin" && isAdmin && <AdminAffiliatePage ctx={ctx} />}
           {page === "admin" && isAdmin && <AdminPage ctx={ctx} />}
         </main>
       </div>
