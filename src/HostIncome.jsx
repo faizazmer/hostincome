@@ -515,6 +515,16 @@ function UserProfileModal({ u, users, ctx, onClose }) {
         {u.referredBy && <Row label="Dirujuk oleh" value={u.referredBy} />}
       </div>
 
+      {u.role !== "admin" && (
+        <div className="mt-3">
+          <button onClick={() => ctx.setUserReopenPerm(u.uid, !u.canReopenPaid)} className="flex w-full items-center justify-between rounded-xl border p-3" style={{ borderColor: u.canReopenPaid ? "#BBF7D0" : "#EEF0F4", background: u.canReopenPaid ? "#F0FDF4" : "#fff" }}>
+            <span className="flex items-center gap-2 text-sm font-bold" style={{ color: u.canReopenPaid ? "#15803D" : INK }}><Lock size={15} style={{ color: u.canReopenPaid ? "#15803D" : SUB }} /> Benarkan buka semula invois berbayar</span>
+            <span className="flex h-6 w-11 items-center rounded-full p-0.5 transition-all" style={{ background: u.canReopenPaid ? "#16A34A" : "#E4E0F5" }}><span className="h-5 w-5 rounded-full bg-white transition-all" style={{ transform: u.canReopenPaid ? "translateX(20px)" : "none" }} /></span>
+          </button>
+          <p className="mt-1 text-[11px]" style={{ color: SUB }}>Kebenaran sementara untuk host ini buka semula invois yang SUDAH DIBAYAR (untuk betulkan silap). Matikan semula selepas selesai.</p>
+        </div>
+      )}
+
       {bankName || bankAcc ? (
         <div className="mt-3 rounded-xl border p-3" style={{ borderColor: "#F1F0F6" }}>
           <p className="mb-1 text-xs font-bold" style={{ color: PURPLE }}>Bank</p>
@@ -699,8 +709,63 @@ function AdminPage({ ctx }) {
     </>
   );
 }
+function CheckoutModal({ ctx, cycleKey, onClose }) {
+  const { profile, submitPayProof } = ctx;
+  const payProof = ctx.payProof || {};
+  const prices = (profile && profile.prices) || {};
+  const base = Number((profile && profile.subPrice) || 0);
+  const amount = prices[cycleKey] != null ? Number(prices[cycleKey]) : base;
+  const period = cycleLabel(profile, cycleKey);
+  const open = ((profile && profile.billing) || {})[cycleKey] === "open";
+  const proof = payProof[cycleKey];
+  const [img, setImg] = useState(proof && proof.img ? proof.img : "");
+  const waMsg = `Hi admin, saya ${(profile && profile.name) || ""} nak bayar langganan HostIncome tempoh ${period} (RM${amount}). Ini bukti pembayaran saya:`;
+  const waHref = `https://wa.me/${PAY_CONFIG.whatsapp}?text=${encodeURIComponent(waMsg)}`;
+  return (
+    <Modal onClose={onClose}>
+      <div className="text-center">
+        <p className="text-xs font-bold uppercase tracking-wider" style={{ color: PURPLE }}>Checkout Langganan</p>
+        <h3 className="mt-1 text-lg font-bold">{period}</h3>
+        <p className="mt-0.5 text-3xl font-extrabold" style={{ color: PURPLE }}>{RM(amount)}</p>
+      </div>
+
+      {open ? (
+        <div className="mt-4 rounded-xl p-4 text-center" style={{ background: "#F0FDF4" }}>
+          <p className="flex items-center justify-center gap-2 text-sm font-bold" style={{ color: "#15803D" }}><CheckCircle2 size={16} /> Kitaran ini sudah aktif (dibayar).</p>
+          {proof && proof.img && <img src={proof.img} alt="bukti" className="mx-auto mt-3 max-h-40 rounded-lg border" style={{ borderColor: "#F1F0F6" }} />}
+        </div>
+      ) : proof && proof.status === "pending" ? (
+        <div className="mt-4 rounded-xl p-4 text-center" style={{ background: "#FEF3C7" }}>
+          <p className="flex items-center justify-center gap-2 text-sm font-bold" style={{ color: "#B45309" }}><CircleDashed size={16} /> Bukti dihantar — menunggu pengesahan admin.</p>
+          {proof.img && <img src={proof.img} alt="bukti" className="mx-auto mt-3 max-h-40 rounded-lg border" style={{ borderColor: "#F1F0F6" }} />}
+          <button onClick={() => { submitPayProof(cycleKey, img, amount); }} className="mt-3 text-xs font-bold" style={{ color: PURPLE }}>Hantar semula bukti baharu di bawah</button>
+          <div className="mt-2"><ImageUpload value={img} onChange={setImg} label="Tukar Gambar Resit" size={56} fallback={<ImageIcon size={18} />} bg="#7C3AED" /></div>
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 rounded-xl border p-4" style={{ borderColor: "#EEF0F4", background: "#FCFBFE" }}>
+            <p className="text-xs font-bold" style={{ color: SUB }}>Maklumat Pembayaran</p>
+            <p className="mt-1 text-sm font-bold">{PAY_CONFIG.bankName} · {PAY_CONFIG.bankAccount}</p>
+            <p className="text-xs" style={{ color: SUB }}>a/n {PAY_CONFIG.bankHolder}</p>
+            <p className="mt-2 text-[11px]" style={{ color: SUB }}>{PAY_CONFIG.note}</p>
+          </div>
+          <a href={waHref} target="_blank" rel="noreferrer" className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl py-3 text-sm font-bold text-white" style={{ background: "#16A34A" }}><Share2 size={16} /> Bayar / Hubungi via WhatsApp</a>
+          <div className="mt-4">
+            <p className="mb-1.5 text-xs font-bold" style={{ color: SUB }}>Muat Naik Bukti Pembayaran</p>
+            <ImageUpload value={img} onChange={setImg} label="Pilih Gambar Resit" size={64} fallback={<ImageIcon size={20} />} bg="#7C3AED" />
+            <button disabled={!img} onClick={() => { submitPayProof(cycleKey, img, amount); onClose(); }} className="mt-3 w-full rounded-xl py-2.5 text-sm font-bold text-white disabled:opacity-40" style={{ background: "linear-gradient(135deg,#7C3AED,#6D28D9)" }}>Hantar Bukti untuk Pengesahan</button>
+          </div>
+        </>
+      )}
+
+      <button onClick={onClose} className="mt-4 w-full rounded-xl border py-2.5 text-sm font-semibold" style={{ borderColor: "#EEF0F4", color: SUB }}>Tutup</button>
+    </Modal>
+  );
+}
 function UserSubscriptionPage({ ctx }) {
   const { profile } = ctx;
+  const payProof = ctx.payProof || {};
+  const [checkoutKey, setCheckoutKey] = useState(null);
   const billing = (profile && profile.billing) || {};
   const prices = (profile && profile.prices) || {};
   const base = Number((profile && profile.subPrice) || 0);
@@ -746,17 +811,19 @@ function UserSubscriptionPage({ ctx }) {
           {MON.map((mn, m) => {
             const k = monthKey(new Date(year, m, 1)); const open = billing[k] === "open"; const isNow = k === CM; const pr = priceFor(k);
             return (
-              <div key={k} className="rounded-xl border p-3" style={{ borderColor: open ? "#BBF7D0" : "#F1F0F6", background: open ? "#F0FDF4" : "#FAFAFB" }}>
+              <button key={k} onClick={() => setCheckoutKey(k)} className="rounded-xl border p-3 text-left transition-all hover:shadow-sm" style={{ borderColor: open ? "#BBF7D0" : "#F1F0F6", background: open ? "#F0FDF4" : "#FAFAFB" }}>
                 <div className="flex items-center justify-between"><span className="text-sm font-bold" style={{ color: open ? "#15803D" : INK }}>{mn}{isNow && <span className="ml-1 text-[9px]" style={{ color: PURPLE }}>•kini</span>}</span>{open ? <CheckCircle2 size={15} style={{ color: "#16A34A" }} /> : <span className="h-3.5 w-3.5 rounded-full border-2" style={{ borderColor: "#E4E0F5" }} />}</div>
                 <p className="text-[9px]" style={{ color: SUB }}>{cycleLabel(profile, k)}</p>
                 <p className="mt-1 text-xs font-semibold" style={{ color: open ? "#15803D" : SUB }}>{open ? RM(pr) : `RM${pr}`}</p>
-                <p className="text-[10px]" style={{ color: SUB }}>{open ? "Dibayar" : "Belum bayar"}</p>
-              </div>
+                <p className="text-[10px] font-bold" style={{ color: open ? "#15803D" : (payProof[k] && payProof[k].status === "pending" ? "#B45309" : PURPLE) }}>{open ? "Dibayar" : (payProof[k] && payProof[k].status === "pending" ? "Menunggu sah" : "Bayar / Checkout →")}</p>
+              </button>
             );
           })}
         </div>
-        <p className="mt-3 text-xs" style={{ color: SUB }}>Hijau = bulan aktif (dibayar). Untuk pengaktifan / pembayaran, sila hubungi admin.</p>
+        <p className="mt-3 text-xs" style={{ color: SUB }}>Hijau = bulan aktif (dibayar). Klik mana-mana kitaran untuk checkout / hantar bukti bayaran.</p>
       </Panel>
+
+      {checkoutKey && <CheckoutModal ctx={ctx} cycleKey={checkoutKey} onClose={() => setCheckoutKey(null)} />}
     </>
   );
 }
@@ -1180,6 +1247,7 @@ export default function HostIncome() {
   function approvePayment(uid, month) { fb.current.update(fb.current.dataPath(uid, `payProof/${month}`), { status: "approved" }); setUserBilling(uid, month, "open"); }
   function rejectPayment(uid, month) { fb.current.update(fb.current.dataPath(uid, `payProof/${month}`), { status: "rejected" }); flash("Bukti ditolak."); }
   function setUserReferredBy(uid, code) { fb.current.update(fb.current.usersPath(uid), { referredBy: code ? String(code).toUpperCase() : null }); flash("Rujukan dikemaskini."); }
+  function setUserReopenPerm(uid, val) { fb.current.update(fb.current.usersPath(uid), { canReopenPaid: !!val }); flash(val ? "Kebenaran buka semula diberi." : "Kebenaran buka semula ditarik."); }
   function recordAffiliatePayout(uid, amount, note) { const id = "p" + Date.now(); fb.current.update(fb.current.usersPath(uid), { ["affiliate/payouts/" + id]: { amount: Number(amount || 0), at: iso(new Date()), note: note || "" } }); flash("Bayaran komisen direkodkan."); }
   function deleteAffiliatePayout(uid, id) { fb.current.update(fb.current.usersPath(uid), { ["affiliate/payouts/" + id]: null }); flash("Rekod bayaran dipadam."); }
   function deleteUserRecord(uid) { fb.current.remove(fb.current.usersPath(uid)); fb.current.remove(fb.current.ref(fb.current.database, `${FB_ROOT}/data/${uid}`)); flash("Rekod & data dipadam."); }
@@ -1244,7 +1312,7 @@ export default function HostIncome() {
   }
   function reopenClaim(id) {
     const c = claims.find((x) => x.id === id); if (!c) return;
-    if (c.paid && !isAdmin) { flash("Hanya admin boleh buka semula invois yang sudah dibayar."); return; }
+    if (c.paid && !isAdmin && !(profile && profile.canReopenPaid)) { flash("Perlu kebenaran admin untuk buka semula invois yang sudah dibayar."); return; }
     if (cloud && fb.current) { fb.current.remove(fb.current.path(`claims/${id}`)); }
     else { setClaims((prev) => prev.filter((x) => x.id !== id)); }
     flash("Invois dibuka semula. Slot kini boleh diedit di Jadual.");
@@ -1286,7 +1354,7 @@ export default function HostIncome() {
     ...(isAdmin ? [{ id: "affiliate-admin", label: "Affiliate", Icon: Share2 }] : []),
     ...(isAdmin ? [{ id: "admin", label: "Admin", Icon: ShieldCheck }] : []),
   ];
-  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser, payProof, submitPayProof, fetchPayProofs, fetchUserSettings, approvePayment, rejectPayment, setUserReferredBy, recordAffiliatePayout, deleteAffiliatePayout };
+  const ctx = { brands, sessions, claims, data, settings, setSettings, saveSettings, cloud, upsertSession, deleteSession, addBrand, updateBrand, deleteBrand, createClaim, markClaimPaid, reopenClaim, setClaimAdjustment, setPage, flash, isAdmin, authUser, profile, users, markTutorialSeen, demo, exitDemo, login, register, logout, setUserRole, setUserStatus, setUserBilling, setUserBillingMulti, setUserAffiliate, setUserSubPrice, setUserMonthPrice, deleteUserRecord, resendVerification, reloadUser, payProof, submitPayProof, fetchPayProofs, fetchUserSettings, approvePayment, rejectPayment, setUserReferredBy, setUserReopenPerm, recordAffiliatePayout, deleteAffiliatePayout };
 
   if (USE_FB && !demo) {
     if (!authReady) return <FullLoader text="Memuatkan…" />;
@@ -2268,7 +2336,8 @@ function Invoice({ ctx }) {
 }
 
 function InvoiceModal({ invId, ctx, onClose }) {
-  const { data, settings, sessions, brands, markClaimPaid, reopenClaim, setClaimAdjustment, isAdmin, setPage } = ctx;
+  const { data, settings, sessions, brands, markClaimPaid, reopenClaim, setClaimAdjustment, isAdmin, profile, setPage } = ctx;
+  const canReopenPaid = isAdmin || (profile && profile.canReopenPaid);
   const inv = data.invoices.find((w) => w.id === invId);
   const [adj, setAdj] = useState(inv && inv.adjustment ? String(inv.adjustment) : "");
   const [adjNote, setAdjNote] = useState((inv && inv.adjustmentNote) || "");
@@ -2374,7 +2443,7 @@ function InvoiceModal({ invId, ctx, onClose }) {
           );
         })()}
         {!inv.paid && <button onClick={() => { if (confirm("Buka semula invois ini? Invois akan dipadam dan slot boleh diedit semula di Jadual.")) { reopenClaim(inv.id); onClose(); setPage("jadual"); } }} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold" style={{ borderColor: "#FDE68A", color: "#B45309", background: "#FFFBEB" }}><Pencil size={15} /> Buka Semula & Edit</button>}
-        {inv.paid && isAdmin && <button onClick={() => { if (confirm("AMARAN: Invois ini SUDAH DIBAYAR.\n\nBuka semula akan PADAM invois & rekod bayaran ini, dan slot kembali boleh diedit di Jadual. Teruskan?")) { reopenClaim(inv.id); onClose(); setPage("jadual"); } }} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold" style={{ borderColor: "#FECACA", color: "#DC2626", background: "#FEF2F2" }}><Lock size={15} /> Buka Semula (Admin)</button>}
+        {inv.paid && canReopenPaid && <button onClick={() => { if (confirm("AMARAN: Invois ini SUDAH DIBAYAR.\n\nBuka semula akan PADAM invois & rekod bayaran ini, dan slot kembali boleh diedit di Jadual. Teruskan?")) { reopenClaim(inv.id); onClose(); setPage("jadual"); } }} className="inline-flex items-center gap-2 rounded-xl border px-4 py-2.5 text-sm font-bold" style={{ borderColor: "#FECACA", color: "#DC2626", background: "#FEF2F2" }}><Lock size={15} /> Buka Semula {isAdmin ? "(Admin)" : "(Dibenarkan)"}</button>}
       </div>
     </Modal>
   );
